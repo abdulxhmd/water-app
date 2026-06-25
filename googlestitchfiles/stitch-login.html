@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Water Tracker Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Playfair+Display:ital,wght@0,400;0,600;1,400&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#6B8E9B","primary-dark": "#55727d",
+                        "accent": "#E8DCCA","background-light": "#FDFBF7","background-dark": "#1a2226","surface-light": "#ffffff",
+                        "surface-dark": "#232d33",
+                        "text-primary-light": "#2D3748",
+                        "text-secondary-light": "#718096",
+                        "text-primary-dark": "#e2e8f0",
+                        "text-secondary-dark": "#94a3b8",
+                        "input-bg": "#F8F6F1",
+                    },
+                    fontFamily: {
+                        "sans": ["Inter", "sans-serif"],
+                        "serif": ["Playfair Display", "serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "2xl": "2rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 1s ease-out forwards;
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); }
+            100% { transform: translateY(0px); }
+        }
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
+        }::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: rgba(107, 142, 155, 0.2);
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-sans antialiased min-h-screen flex flex-col items-center justify-center p-6 relative">
+<div class="fixed inset-0 z-0 overflow-hidden pointer-events-none opacity-60">
+<div class="absolute top-[-10%] left-[-5%] w-[40%] h-[40%] rounded-full bg-[#E8DCCA]/30 dark:bg-primary/5 blur-[100px]"></div>
+<div class="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] rounded-full bg-primary/10 blur-[120px]"></div>
+</div>
+<main class="relative z-10 w-full max-w-[420px] animate-fade-in">
+<div class="bg-surface-light dark:bg-surface-dark rounded-2xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] border border-[#EBE5DA] dark:border-slate-800 p-8 md:p-10 flex flex-col gap-8 relative overflow-hidden">
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent"></div>
+<div class="flex flex-col items-center text-center gap-3 pt-2">
+<div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-2 animate-float">
+<span class="material-symbols-outlined text-2xl">water_drop</span>
+</div>
+<div class="flex flex-col gap-1">
+<h1 class="text-text-primary-light dark:text-text-primary-dark text-3xl font-serif italic font-medium tracking-wide">It's good to see you</h1>
+<p class="text-text-secondary-light dark:text-text-secondary-dark text-sm font-light mt-1">Ready for a mindful sip?</p>
+</div>
+</div>
+<form class="flex flex-col gap-6" onsubmit="event.preventDefault();">
+<div class="flex flex-col gap-2 group">
+<label class="text-text-secondary-light dark:text-text-secondary-dark text-xs uppercase tracking-widest font-medium ml-1" for="username">Who is logging in?</label>
+<div class="relative transition-all duration-300 transform group-focus-within:scale-[1.01]">
+<input class="w-full h-12 pl-4 pr-4 bg-input-bg dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg text-text-primary-light dark:text-text-primary-dark placeholder:text-text-secondary-light/50 dark:placeholder:text-text-secondary-dark/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all duration-200 text-center font-serif" id="username" placeholder="Your Name" type="text"/>
+</div>
+</div>
+<div class="flex flex-col gap-3">
+<div class="flex justify-between items-center px-1">
+<label class="text-text-secondary-light dark:text-text-secondary-dark text-xs uppercase tracking-widest font-medium">Your secret key</label>
+</div>
+<div class="flex justify-center gap-3">
+<input class="w-12 h-14 text-center text-xl bg-input-bg dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all duration-200 text-primary font-serif" maxlength="1" type="password"/>
+<input class="w-12 h-14 text-center text-xl bg-input-bg dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all duration-200 text-primary font-serif" maxlength="1" type="password"/>
+<input class="w-12 h-14 text-center text-xl bg-input-bg dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all duration-200 text-primary font-serif" maxlength="1" type="password"/>
+<input class="w-12 h-14 text-center text-xl bg-input-bg dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all duration-200 text-primary font-serif" maxlength="1" type="password"/>
+</div>
+</div>
+<button class="mt-4 w-full h-12 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium text-sm tracking-wide shadow-md hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2 group transform active:scale-[0.99]" type="submit">
+<span>Enter Space</span>
+<span class="material-symbols-outlined text-lg opacity-70 group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</button>
+</form>
+<div class="text-center pt-2">
+<a class="text-text-secondary-light/60 dark:text-text-secondary-dark/60 text-xs hover:text-primary transition-colors duration-200 underline decoration-dotted underline-offset-4" href="#">
+                    I forgot my key
+                </a>
+</div>
+</div>
+<div class="mt-12 text-center max-w-xs mx-auto animate-fade-in" style="animation-delay: 0.2s;">
+<div class="flex items-center justify-center gap-2 mb-2 text-primary/60">
+<span class="material-symbols-outlined text-lg">spa</span>
+</div>
+<p class="text-text-secondary-light/80 dark:text-text-secondary-dark/80 text-sm font-serif italic leading-relaxed">
+                "Drinking water first thing in the morning activates your internal organs."
+            </p>
+</div>
+</main>
+
+</body></html>
