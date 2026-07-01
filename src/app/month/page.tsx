@@ -30,6 +30,9 @@ export default function MonthPage() {
   const USER_B = partnerId ?? "";
   const { currentName, partnerName } = getUserNames(user?.email);
   const { monthStart, monthEnd } = getMonthRange(new Date());
+  const monthName = new Date(monthStart).toLocaleDateString(undefined, {
+    month: "long",
+  });
   const endOfMonth = new Date(monthEnd);
   endOfMonth.setHours(23, 59, 59, 999);
   const isMonthLocked = new Date() > endOfMonth;
@@ -106,11 +109,10 @@ export default function MonthPage() {
     const loadOrSaveMonthlyResult = async () => {
       const { data, error } = await supabase
         .from("monthly_results")
-        .select("user_a_wins, user_b_wins, winner")
+        .select("user_a_wins, user_b_wins, winner, user_a_id, user_b_id")
         .eq("month_start", monthStart)
         .eq("month_end", monthEnd)
-        .eq("user_a_id", USER_A)
-        .eq("user_b_id", USER_B)
+        .or(`and(user_a_id.eq.${USER_A},user_b_id.eq.${USER_B}),and(user_a_id.eq.${USER_B},user_b_id.eq.${USER_A})`)
         .maybeSingle();
 
       if (error) {
@@ -119,11 +121,10 @@ export default function MonthPage() {
       }
 
       if (data) {
-        setMonthlyResult({
-          userAWins: data.user_a_wins ?? 0,
-          userBWins: data.user_b_wins ?? 0,
-          winner: data.winner ?? "tie",
-        });
+        const mapped = mapMonthlyResultRowToCurrent(data, USER_A, USER_B);
+        if (mapped) {
+          setMonthlyResult(mapped);
+        }
         return;
       }
 
@@ -179,8 +180,7 @@ export default function MonthPage() {
         .select(
           "week_start, week_end, user_a_id, user_b_id, user_a_total, user_b_total, winner"
         )
-        .eq("user_a_id", USER_A)
-        .eq("user_b_id", USER_B)
+        .or(`and(user_a_id.eq.${USER_A},user_b_id.eq.${USER_B}),and(user_a_id.eq.${USER_B},user_b_id.eq.${USER_A})`)
         .gte("week_start", monthStart)
         .lte("week_start", monthEnd)
         .order("week_start", { ascending: true });
@@ -234,7 +234,7 @@ export default function MonthPage() {
           <section className="flex flex-col items-center justify-center space-y-6 pb-4 pt-8 text-center">
             <div className="inline-flex items-center gap-2 rounded-full bg-[#7FB8FF]/10 px-4 py-1.5 text-sm font-semibold uppercase tracking-wide text-[#7FB8FF] dark:bg-[#7FB8FF]/20">
               <span className="material-symbols-outlined text-lg">trophy</span>
-              October Champion
+              {monthName} Champion
             </div>
             <h1 className="text-4xl font-semibold tracking-tight text-slate-800 dark:text-slate-800 md:text-5xl">
               Monthly status: {monthlyStatus}
@@ -389,14 +389,22 @@ function getMonthRange(date: Date) {
   const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
 
   return {
-    monthStart: monthStart.toISOString().slice(0, 10),
-    monthEnd: monthEnd.toISOString().slice(0, 10),
+    monthStart: formatLocalDate(monthStart),
+    monthEnd: formatLocalDate(monthEnd),
   };
+}
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 function getUserNames(email?: string | null) {
   const normalized = email?.split("@")[0]?.toLowerCase() ?? "";
-  const userAName = "Abdul";
+  const userAName = "Shahul";
   const userBName = "Shaima";
 
   if (normalized === userBName.toLowerCase()) {
@@ -408,6 +416,30 @@ function getUserNames(email?: string | null) {
   }
 
   return { currentName: "You", partnerName: "Partner" };
+}
+
+function mapMonthlyResultRowToCurrent(
+  row: WeeklyResult,
+  currentUserId: string,
+  partnerId: string
+) {
+  if (row.user_a_id === currentUserId && row.user_b_id === partnerId) {
+    return {
+      userAWins: row.user_a_total ?? 0,
+      userBWins: row.user_b_total ?? 0,
+      winner: row.winner ?? "tie",
+    };
+  }
+
+  if (row.user_a_id === partnerId && row.user_b_id === currentUserId) {
+    return {
+      userAWins: row.user_b_total ?? 0,
+      userBWins: row.user_a_total ?? 0,
+      winner: row.winner ?? "tie",
+    };
+  }
+
+  return null;
 }
 
 

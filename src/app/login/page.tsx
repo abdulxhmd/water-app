@@ -41,7 +41,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/today");
+    router.replace("/today");
   };
 
   return (
@@ -84,7 +84,7 @@ export default function LoginPage() {
                   autoComplete="username"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Abdul"
+                  placeholder="Shahul"
                   className="h-12 w-full rounded-lg border border-slate-200 bg-[#EEF7F1] px-4 text-center text-slate-800 placeholder:text-slate-400 focus:border-[#7FB8FF] focus:outline-none focus:ring-1 focus:ring-[#7FB8FF] dark:border-[#dbe6f2] dark:bg-[#eef7ff]/70 dark:text-slate-800 dark:placeholder:text-slate-500"
                 />
               </div>

@@ -1,11 +1,120 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
+import { useUser } from "@/lib/useUser";
+import { usePushNotifications } from "@/lib/usePushNotifications";
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { user, loading } = useUser();
+  const { status: pushStatus, subscribe, unsubscribe, checkStatus } = usePushNotifications();
+
+  // Reminder preferences
+  const [dailyReminder, setDailyReminder] = useState(false);
+  const [partnerReminder, setPartnerReminder] = useState(false);
+  const [reminderStatus, setReminderStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Passcode
+  const [newPin, setNewPin] = useState("");
+  const [pinStatus, setPinStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Load saved reminder preferences on mount
+  useEffect(() => {
+    if (loading || !user) return;
+    checkStatus();
+
+    const loadPreferences = async () => {
+      const { data, error } = await supabase
+        .from("user_preferences")
+        .select("daily_reminder, partner_reminder")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (error) {
+        setReminderStatus({ type: "error", message: "Could not load preferences." });
+        return;
+      }
+
+      if (data) {
+        setDailyReminder(data.daily_reminder ?? false);
+        setPartnerReminder(data.partner_reminder ?? false);
+      }
+    };
+
+    loadPreferences();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, user]);
+
+  const handleReminderToggle = async (field: "daily_reminder" | "partner_reminder", value: boolean) => {
+    if (!user) return;
+
+    // Optimistically update UI
+    if (field === "daily_reminder") setDailyReminder(value);
+    else setPartnerReminder(value);
+    setReminderStatus(null);
+
+    // If enabling daily reminder, request push permission + subscribe
+    if (field === "daily_reminder" && value) {
+      const ok = await subscribe(user.id);
+      if (!ok) {
+        setDailyReminder(false);
+        setReminderStatus({ type: "error", message: "Could not enable notifications. Please allow notifications in your browser." });
+        return;
+      }
+    }
+
+    // If disabling daily reminder, unsubscribe from push
+    if (field === "daily_reminder" && !value) {
+      await unsubscribe(user.id);
+    }
+
+    const { error } = await supabase
+      .from("user_preferences")
+      .upsert(
+        {
+          user_id: user.id,
+          daily_reminder: field === "daily_reminder" ? value : dailyReminder,
+          partner_reminder: field === "partner_reminder" ? value : partnerReminder,
+        },
+        { onConflict: "user_id" }
+      );
+
+    if (error) {
+      if (field === "daily_reminder") setDailyReminder(!value);
+      else setPartnerReminder(!value);
+      setReminderStatus({ type: "error", message: "Could not save preference." });
+    } else {
+      setReminderStatus({ type: "success", message: "Saved." });
+      setTimeout(() => setReminderStatus(null), 3000);
+    }
+  };
+
+  const handleUpdatePasscode = async () => {
+    if (!/^\d{4}$/.test(newPin)) {
+      setPinStatus({ type: "error", message: "Passcode must be exactly 4 digits." });
+      return;
+    }
+
+    setIsUpdating(true);
+    setPinStatus(null);
+
+    const { error } = await supabase.auth.updateUser({
+      password: `water-${newPin}-lock`,
+    });
+
+    setIsUpdating(false);
+
+    if (error) {
+      setPinStatus({ type: "error", message: error.message });
+    } else {
+      setPinStatus({ type: "success", message: "Passcode updated successfully." });
+      setNewPin("");
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -94,13 +203,29 @@ export default function SettingsPage() {
             <div className="mt-4 space-y-4 text-sm">
               <label className="flex items-center justify-between text-slate-700 dark:text-slate-700">
                 <span>Daily reminder</span>
-                <input type="checkbox" />
+                <input
+                  type="checkbox"
+                  checked={dailyReminder}
+                  onChange={(e) => handleReminderToggle("daily_reminder", e.target.checked)}
+                  className="h-4 w-4 accent-[#7FB8FF]"
+                />
               </label>
 
               <label className="flex items-center justify-between text-slate-700 dark:text-slate-700">
                 <span>Allow partner reminders</span>
-                <input type="checkbox" />
+                <input
+                  type="checkbox"
+                  checked={partnerReminder}
+                  onChange={(e) => handleReminderToggle("partner_reminder", e.target.checked)}
+                  className="h-4 w-4 accent-[#7FB8FF]"
+                />
               </label>
+
+              {reminderStatus ? (
+                <p className={`text-xs font-medium ${reminderStatus.type === "error" ? "text-rose-500" : "text-emerald-600"}`}>
+                  {reminderStatus.message}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -114,12 +239,30 @@ export default function SettingsPage() {
 
             <input
               type="password"
-              placeholder="New passcode"
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="New 4-digit passcode"
+              value={newPin}
+              onChange={(e) => {
+                setNewPin(e.target.value.replace(/\D/g, "").slice(0, 4));
+                setPinStatus(null);
+              }}
               className="mt-4 w-full rounded-lg border border-[#E3E8F5] bg-[#EEF7F1] px-3 py-2 text-sm text-slate-800 focus:border-[#7FB8FF] focus:outline-none focus:ring-1 focus:ring-[#7FB8FF] dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-800"
             />
 
-            <button className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#9cc7ff] via-[#c5b4ff] to-[#b9f0d2] py-2 text-sm font-medium text-white shadow-[0_12px_28px_rgba(127,184,255,0.35)] transition-all hover:from-[#8fbfff] hover:via-[#b8a8ff] hover:to-[#aeecc7]">
-              Update passcode
+            {pinStatus ? (
+              <p className={`mt-2 text-xs font-medium ${pinStatus.type === "error" ? "text-rose-500" : "text-emerald-600"}`}>
+                {pinStatus.message}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={handleUpdatePasscode}
+              disabled={isUpdating}
+              className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#9cc7ff] via-[#c5b4ff] to-[#b9f0d2] py-2 text-sm font-medium text-white shadow-[0_12px_28px_rgba(127,184,255,0.35)] transition-all hover:from-[#8fbfff] hover:via-[#b8a8ff] hover:to-[#aeecc7] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isUpdating ? "Updating…" : "Update passcode"}
             </button>
           </div>
 

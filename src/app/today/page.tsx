@@ -35,7 +35,7 @@ export default function TodayPage() {
     }
 
     const loadToday = async () => {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = formatLocalDate(new Date());
       const { data, error } = await supabase
         .from("daily_water")
         .select("water_ml")
@@ -49,7 +49,7 @@ export default function TodayPage() {
       }
 
       if (data?.water_ml != null) {
-        setWater(data.water_ml);
+        setWater(Math.max(0, data.water_ml));
       }
     };
 
@@ -58,29 +58,41 @@ export default function TodayPage() {
 
   // Shared handlers for custom input.
   const handleAddCustom = () => {
-    setWater((prevWater) => prevWater + Number(customAmount));
+    const amount = Number(customAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setCustomAmount("");
+      return;
+    }
+
+    setWater((prevWater) => Math.max(0, prevWater + amount));
     setCustomAmount("");
   };
   const handleSubtractCustom = () => {
-    setWater((prevWater) => prevWater - Number(customAmount));
+    const amount = Number(customAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setCustomAmount("");
+      return;
+    }
+
+    setWater((prevWater) => Math.max(0, prevWater - amount));
     setCustomAmount("");
   };
   const handleQuickAdd = (amount: number) => {
-    setWater((prevWater) => prevWater + amount);
+    setWater((prevWater) => Math.max(0, prevWater + amount));
   };
   const handleSaveToday = async () => {
     if (loading || !userId) {
       return;
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatLocalDate(new Date());
     const { error } = await supabase
       .from("daily_water")
       .upsert(
         {
           user_id: userId,
           date: today,
-          water_ml: water,
+          water_ml: Math.max(0, water),
         },
         { onConflict: "user_id,date" }
       );
@@ -308,7 +320,7 @@ function getHydrationLabel(fillPercent: number) {
 
 function getUserNames(email?: string | null) {
   const normalized = email?.split("@")[0]?.toLowerCase() ?? "";
-  const userAName = "Abdul";
+  const userAName = "Shahul";
   const userBName = "Shaima";
 
   if (normalized === userBName.toLowerCase()) {
@@ -335,6 +347,14 @@ function formatDateTime(date: Date) {
   const ampm = date.getHours() >= 12 ? "PM" : "AM";
   
   return `${weekday}, ${month} ${day}, ${hour}:${minute} ${ampm}`;
+}
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 

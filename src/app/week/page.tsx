@@ -1,18 +1,30 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 
 import { supabase } from "@/lib/supabase";
 import { useUser } from "@/lib/useUser";
 
 type DailyWaterEntry = {
+  user_id: string;
   date: string;
   water_ml: number;
 };
 
+type WeeklyResult = {
+  week_start: string;
+  week_end: string;
+  user_a_id: string;
+  user_b_id: string;
+  user_a_total: number | null;
+  user_b_total: number | null;
+  winner: string | null;
+};
+
 export default function WeekPage() {
   const [weekEntries, setWeekEntries] = useState<DailyWaterEntry[]>([]);
+  const [partnerWeekEntries, setPartnerWeekEntries] = useState<DailyWaterEntry[]>([]);
   const [weeklyTotals, setWeeklyTotals] = useState<{
     userA: number;
     userB: number;
@@ -29,6 +41,22 @@ export default function WeekPage() {
   const endOfWeek = new Date(endDate);
   endOfWeek.setHours(23, 59, 59, 999);
   const isWeekLocked = new Date() > endOfWeek;
+
+  const currentWeekTotal = weekEntries.reduce((sum, entry) => sum + entry.water_ml, 0);
+  const partnerWeekTotal = partnerWeekEntries.reduce((sum, entry) => sum + entry.water_ml, 0);
+  const computedWeeklyTotals = useMemo(
+    () => ({ userA: currentWeekTotal, userB: partnerWeekTotal }),
+    [currentWeekTotal, partnerWeekTotal]
+  );
+  const effectiveWeeklyTotals = weeklyTotals ?? computedWeeklyTotals;
+  const weeklyWinner = weeklyWinnerState || getWeeklyWinner(effectiveWeeklyTotals, USER_A, USER_B);
+  const weeklyResult = getWeeklyResult(weeklyWinner, USER_A, USER_B, currentName, partnerName);
+  const currentWeeklyLiters = (effectiveWeeklyTotals.userA / 1000).toFixed(1);
+  const partnerWeeklyLiters = (effectiveWeeklyTotals.userB / 1000).toFixed(1);
+  const currentWeeklyAverage = (effectiveWeeklyTotals.userA / 7 / 1000).toFixed(1);
+  const partnerWeeklyAverage = (effectiveWeeklyTotals.userB / 7 / 1000).toFixed(1);
+  const weekDateLabel = `${formatShortDate(startDate)} — ${formatShortDate(endDate)}`;
+  const weekHeading = `Week of ${weekDateLabel}`;
 
   useEffect(() => {
     if (loading || !userId) {
@@ -62,42 +90,48 @@ export default function WeekPage() {
   }, [loading, userId]);
 
   useEffect(() => {
-    if (loading || !user) {
+    if (loading || !userId) {
       return;
     }
 
     const loadWeekEntries = async () => {
-      const { startDate, endDate } = getWeekRange(new Date());
-      const { data, error } = await supabase
+      const query = supabase
         .from("daily_water")
-        .select("date, water_ml")
-        .eq("user_id", userId)
+        .select("user_id, date, water_ml")
         .gte("date", startDate)
         .lte("date", endDate)
         .order("date", { ascending: true });
+
+      const request = partnerId
+        ? query.in("user_id", [userId, partnerId])
+        : query.eq("user_id", userId);
+
+      const { data, error } = await request;
 
       if (error) {
         console.error("Error loading weekly water:", error);
         return;
       }
 
-      setWeekEntries(data ?? []);
+      const entries = data ?? [];
+      setWeekEntries(entries.filter((entry) => entry.user_id === userId));
+      setPartnerWeekEntries(entries.filter((entry) => entry.user_id === partnerId));
     };
 
     loadWeekEntries();
-  }, [loading, user, userId]);
+  }, [loading, partnerId, startDate, endDate, userId]);
 
   const weekDays = buildWeekDays(startDate, weekEntries);
+  const partnerWeekDays = buildWeekDays(startDate, partnerWeekEntries);
   const weeklyTotal = weekDays.reduce((sum, day) => sum + day.water, 0);
-  const weeklyWinner =
-    weeklyWinnerState || getWeeklyWinner(weeklyTotals, USER_A, USER_B);
-  const weeklyResult = getWeeklyResult(
-    weeklyWinner,
-    USER_A,
-    USER_B,
-    currentName,
-    partnerName
-  );
+  const currentWeekStatus =
+    effectiveWeeklyTotals.userA >= effectiveWeeklyTotals.userB
+      ? "You're ahead this week"
+      : "Keep drinking to catch up";
+  const partnerWeekStatus =
+    effectiveWeeklyTotals.userB > effectiveWeeklyTotals.userA
+      ? "Partner is ahead"
+      : "Keep going, you're close";
 
   useEffect(() => {
     if (!isWeekLocked || loading || !user || !partnerId) {
@@ -107,13 +141,12 @@ export default function WeekPage() {
     const loadOrSaveWeeklyResult = async () => {
       const { data, error } = await supabase
         .from("weekly_results")
-        .select(
-          "user_a_total, user_b_total, winner, user_a_id, user_b_id"
-        )
+        .select("user_a_total, user_b_total, winner, user_a_id, user_b_id")
         .eq("week_start", startDate)
         .eq("week_end", endDate)
-        .eq("user_a_id", USER_A)
-        .eq("user_b_id", USER_B)
+        .or(
+          `and(user_a_id.eq.${USER_A},user_b_id.eq.${USER_B}),and(user_a_id.eq.${USER_B},user_b_id.eq.${USER_A})`
+        )
         .maybeSingle();
 
       if (error) {
@@ -122,19 +155,23 @@ export default function WeekPage() {
       }
 
       if (data) {
-        setWeeklyTotals({
-          userA: data.user_a_total ?? 0,
-          userB: data.user_b_total ?? 0,
-        });
-        setWeeklyWinnerState(data.winner ?? "");
+        const mapped = mapWeeklyResultRowToCurrent(data, USER_A, USER_B);
+        if (mapped) {
+          setWeeklyTotals({
+            userA: mapped.userATotal,
+            userB: mapped.userBTotal,
+          });
+          setWeeklyWinnerState(mapped.winner);
+        }
         return;
       }
 
-      if (!weeklyTotals) {
+      const totalsToSave = weeklyTotals ?? computedWeeklyTotals;
+      if (!partnerId) {
         return;
       }
 
-      const computedWinner = getWeeklyWinner(weeklyTotals, USER_A, USER_B);
+      const computedWinner = getWeeklyWinner(totalsToSave, USER_A, USER_B);
       if (!computedWinner) {
         return;
       }
@@ -146,8 +183,8 @@ export default function WeekPage() {
           week_end: endDate,
           user_a_id: USER_A,
           user_b_id: USER_B,
-          user_a_total: weeklyTotals.userA,
-          user_b_total: weeklyTotals.userB,
+          user_a_total: totalsToSave.userA,
+          user_b_total: totalsToSave.userB,
           winner: computedWinner,
         });
 
@@ -164,12 +201,12 @@ export default function WeekPage() {
   }, [
     USER_A,
     USER_B,
+    computedWeeklyTotals,
     endDate,
     isWeekLocked,
     loading,
     partnerId,
     startDate,
-    user,
     userId,
     weeklyTotals,
   ]);
@@ -238,7 +275,7 @@ export default function WeekPage() {
                 Weekly Recap
               </div>
               <h1 className="text-3xl font-semibold leading-tight tracking-tight text-slate-800 dark:text-slate-800 md:text-4xl">
-                Sunday, October 24th
+                {weekHeading}
               </h1>
             </div>
             <div className="flex items-center gap-2">
@@ -253,7 +290,7 @@ export default function WeekPage() {
                 <span className="material-symbols-outlined">chevron_left</span>
               </button>
               <span className="px-2 text-sm font-medium text-slate-500 dark:text-slate-600">
-                Week 42
+                {weekDateLabel}
               </span>
               <button
                 disabled={isWeekLocked}
@@ -395,18 +432,18 @@ export default function WeekPage() {
                 </div>
                 <div className="relative z-10 mb-6 flex flex-col gap-1">
                   <span className="text-5xl font-semibold tracking-tight text-slate-800 dark:text-slate-800">
-                    14.2 <span className="text-2xl font-semibold text-slate-500">L</span>
+                    {currentWeeklyLiters} <span className="text-2xl font-semibold text-slate-500">L</span>
                   </span>
                   <span className="font-medium text-slate-500 dark:text-slate-600">
                     Weekly Total
                   </span>
                 </div>
                 <div className="mb-2 h-3 w-full overflow-hidden rounded-full bg-[#EEF7F1] dark:bg-[#f4f3ff]">
-                  <div className="h-3 w-full rounded-full bg-[#7FB8FF]" />
+                  <div className="h-3 rounded-full bg-[#7FB8FF]" style={{ width: `${Math.min(100, Math.round((effectiveWeeklyTotals.userA / 28000) * 100))}%` }} />
                 </div>
                 <div className="flex justify-between text-xs font-medium text-slate-500">
-                  <span>Daily Goal: 2.0 L</span>
-                  <span>Avg: 2.1 L/day</span>
+                  <span>{currentWeekStatus}</span>
+                  <span>Avg: {currentWeeklyAverage} L/day</span>
                 </div>
               </BlurWrapper>
             </div>
@@ -436,18 +473,18 @@ export default function WeekPage() {
                 </div>
                 <div className="relative z-10 mb-6 flex flex-col gap-1">
                   <span className="text-5xl font-semibold tracking-tight text-slate-800 dark:text-slate-800">
-                    13.8 <span className="text-2xl font-semibold text-slate-500">L</span>
+                    {partnerWeeklyLiters} <span className="text-2xl font-semibold text-slate-500">L</span>
                   </span>
                   <span className="font-medium text-slate-500 dark:text-slate-600">
                     Weekly Total
                   </span>
                 </div>
                 <div className="mb-2 h-3 w-full overflow-hidden rounded-full bg-[#EEF7F1] dark:bg-[#f4f3ff]">
-                  <div className="h-3 w-[92%] rounded-full bg-[#7FB8FF]/60" />
+                  <div className="h-3 rounded-full bg-[#7FB8FF]/60" style={{ width: `${Math.min(100, Math.round((effectiveWeeklyTotals.userB / 28000) * 100))}%` }} />
                 </div>
                 <div className="flex justify-between text-xs font-medium text-slate-500">
-                  <span>Daily Goal: 2.0 L</span>
-                  <span>Avg: 1.9 L/day</span>
+                  <span>{partnerWeekStatus}</span>
+                  <span>Avg: {partnerWeeklyAverage} L/day</span>
                 </div>
               </BlurWrapper>
             </div>
@@ -465,35 +502,20 @@ export default function WeekPage() {
                   </span>
                 </div>
                 <div className="grid h-32 grid-cols-7 items-end gap-2 md:gap-4">
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[60%] w-full rounded-t-sm bg-[#7FB8FF]/20 transition-colors group-hover:bg-[#7FB8FF]/40" />
-                    <span className="text-xs font-semibold text-slate-500">M</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[80%] w-full rounded-t-sm bg-[#7FB8FF]/20 transition-colors group-hover:bg-[#7FB8FF]/40" />
-                    <span className="text-xs font-semibold text-slate-500">T</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[50%] w-full rounded-t-sm bg-[#7FB8FF]/20 transition-colors group-hover:bg-[#7FB8FF]/40" />
-                    <span className="text-xs font-semibold text-slate-500">W</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-full w-full rounded-t-sm bg-[#7FB8FF] shadow-[0_0_15px_rgba(107,142,155,0.5)]" />
-                    <span className="text-xs font-semibold text-[#7FB8FF]">T</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[70%] w-full rounded-t-sm bg-[#7FB8FF]/20 transition-colors group-hover:bg-[#7FB8FF]/40" />
-                    <span className="text-xs font-semibold text-slate-500">F</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[50%] w-full rounded-t-sm bg-[#7FB8FF]/20 transition-colors group-hover:bg-[#7FB8FF]/40" />
-                    <span className="text-xs font-semibold text-slate-500">S</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[70%] w-full rounded-t-sm bg-[#7FB8FF]/20 transition-colors group-hover:bg-[#7FB8FF]/40" />
-                    <span className="text-xs font-semibold text-slate-500">S</span>
-                  </div>
-                </div>
+                {weekDays.map((day) => {
+                  const height = Math.min(100, Math.round((day.water / 4000) * 100));
+                  return (
+                    <div key={day.date} className="group flex h-full flex-col items-center justify-end gap-2">
+                      <div
+                        className="w-full rounded-t-sm bg-[#7FB8FF]/40 transition-all duration-200 group-hover:bg-[#7FB8FF]"
+                        style={{ height: `${height}%` }}
+                        title={`${day.water} ml`}
+                      />
+                      <span className="text-xs font-semibold text-slate-500">{day.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
               </div>
 
               <div className="hidden w-px self-stretch bg-[#E3E8F5] dark:bg-[#eef7ff] md:block" />
@@ -508,36 +530,19 @@ export default function WeekPage() {
                   </span>
                 </div>
                 <div className="grid h-32 grid-cols-7 items-end gap-2 md:gap-4">
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[40%] w-full rounded-t-sm bg-slate-400/20 transition-colors group-hover:bg-slate-400/40" />
-                    <span className="text-xs font-semibold text-slate-500">M</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[20%] w-full rounded-t-sm bg-slate-400/20 transition-colors group-hover:bg-slate-400/40" />
-                    <span className="text-xs font-semibold text-slate-500">T</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[60%] w-full rounded-t-sm bg-slate-400/20 transition-colors group-hover:bg-slate-400/40" />
-                    <span className="text-xs font-semibold text-slate-500">W</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[80%] w-full rounded-t-sm bg-[#7FB8FF]/60 shadow-[0_0_10px_rgba(107,142,155,0.3)]" />
-                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-800">
-                      T
-                    </span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[30%] w-full rounded-t-sm bg-slate-400/20 transition-colors group-hover:bg-slate-400/40" />
-                    <span className="text-xs font-semibold text-slate-500">F</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[40%] w-full rounded-t-sm bg-slate-400/20 transition-colors group-hover:bg-slate-400/40" />
-                    <span className="text-xs font-semibold text-slate-500">S</span>
-                  </div>
-                  <div className="group flex h-full flex-col items-center justify-end gap-2">
-                    <div className="h-[20%] w-full rounded-t-sm bg-slate-400/20 transition-colors group-hover:bg-slate-400/40" />
-                    <span className="text-xs font-semibold text-slate-500">S</span>
-                  </div>
+                  {partnerWeekDays.map((day) => {
+                    const height = Math.min(100, Math.round((day.water / 4000) * 100));
+                    return (
+                      <div key={day.date} className="group flex h-full flex-col items-center justify-end gap-2">
+                        <div
+                          className="w-full rounded-t-sm bg-slate-400/40 transition-all duration-200 group-hover:bg-[#7FB8FF]/40"
+                          style={{ height: `${height}%` }}
+                          title={`${day.water} ml`}
+                        />
+                        <span className="text-xs font-semibold text-slate-500">{day.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -605,9 +610,17 @@ function getWeekRange(date: Date) {
   end.setDate(start.getDate() + 6);
 
   return {
-    startDate: start.toISOString().slice(0, 10),
-    endDate: end.toISOString().slice(0, 10),
+    startDate: formatLocalDate(start),
+    endDate: formatLocalDate(end),
   };
+}
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 function buildWeekDays(startDate: string, entries: DailyWaterEntry[]) {
@@ -667,9 +680,41 @@ function getWeeklyResult(
   return "Winner: TBD";
 }
 
+function mapWeeklyResultRowToCurrent(
+  row: WeeklyResult,
+  currentUserId: string,
+  partnerId: string
+) {
+  if (row.user_a_id === currentUserId && row.user_b_id === partnerId) {
+    return {
+      userATotal: row.user_a_total ?? 0,
+      userBTotal: row.user_b_total ?? 0,
+      winner: row.winner ?? "",
+    };
+  }
+
+  if (row.user_a_id === partnerId && row.user_b_id === currentUserId) {
+    return {
+      userATotal: row.user_b_total ?? 0,
+      userBTotal: row.user_a_total ?? 0,
+      winner: row.winner ?? "",
+    };
+  }
+
+  return null;
+}
+
+function formatShortDate(dateString: string) {
+  const date = new Date(dateString);
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function getUserNames(email?: string | null) {
   const normalized = email?.split("@")[0]?.toLowerCase() ?? "";
-  const userAName = "Abdul";
+  const userAName = "Shahul";
   const userBName = "Shaima";
 
   if (normalized === userBName.toLowerCase()) {
