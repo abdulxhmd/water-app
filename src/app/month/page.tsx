@@ -418,23 +418,31 @@ function getUserNames(email?: string | null) {
   return { currentName: "You", partnerName: "Partner" };
 }
 
+type MonthlyResultRow = {
+  user_a_id: string;
+  user_b_id: string;
+  user_a_wins: number;
+  user_b_wins: number;
+  winner: string;
+};
+
 function mapMonthlyResultRowToCurrent(
-  row: WeeklyResult,
+  row: MonthlyResultRow,
   currentUserId: string,
   partnerId: string
 ) {
   if (row.user_a_id === currentUserId && row.user_b_id === partnerId) {
     return {
-      userAWins: row.user_a_total ?? 0,
-      userBWins: row.user_b_total ?? 0,
+      userAWins: row.user_a_wins ?? 0,
+      userBWins: row.user_b_wins ?? 0,
       winner: row.winner ?? "tie",
     };
   }
 
   if (row.user_a_id === partnerId && row.user_b_id === currentUserId) {
     return {
-      userAWins: row.user_b_total ?? 0,
-      userBWins: row.user_a_total ?? 0,
+      userAWins: row.user_b_wins ?? 0,
+      userBWins: row.user_a_wins ?? 0,
       winner: row.winner ?? "tie",
     };
   }
