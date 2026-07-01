@@ -680,8 +680,16 @@ function getWeeklyResult(
   return "Winner: TBD";
 }
 
+type WeeklyResultPartialRow = {
+  user_a_id: string;
+  user_b_id: string;
+  user_a_total: number | null;
+  user_b_total: number | null;
+  winner: string | null;
+};
+
 function mapWeeklyResultRowToCurrent(
-  row: WeeklyResult,
+  row: WeeklyResultPartialRow,
   currentUserId: string,
   partnerId: string
 ) {
