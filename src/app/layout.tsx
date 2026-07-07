@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import AuthBootstrap from "../components/AuthBootstrap";
 import AuthGate from "@/components/AuthGate";
 import ThemeBootstrap from "@/components/ThemeBootstrap";
+import PwaBootstrap from "@/components/PwaBootstrap";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,6 +19,18 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Water App",
   description: "A shared hydration tracker for two — log daily water intake and compare weekly and monthly.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Water App",
+  },
+  icons: {
+    apple: "/apple-touch-icon.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#7FB8FF",
 };
 
 export default function RootLayout({
@@ -38,6 +51,7 @@ export default function RootLayout({
       >
         <AuthBootstrap />
         <ThemeBootstrap />
+        <PwaBootstrap />
         <AuthGate>{children}</AuthGate>
       </body>
     </html>

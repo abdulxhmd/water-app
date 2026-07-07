@@ -10,6 +10,8 @@ import { useProfile } from "@/lib/useProfile";
 import { usePartner } from "@/lib/usePartner";
 import { clampWater, MAX_SINGLE_ENTRY_ML } from "@/lib/water";
 import { getRandomHydrationMessage } from "@/lib/hydrationMessages";
+import { getQueuedSave, isOfflineError, queueWaterSave } from "@/lib/offlineQueue";
+import { useOfflineSync } from "@/lib/useOfflineSync";
 import { useDeviceTilt } from "@/lib/useDeviceTilt";
 import UserAvatar from "@/components/UserAvatar";
 import PageFooter from "@/components/PageFooter";
@@ -22,6 +24,7 @@ export default function TodayPage() {
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [savedOffline, setSavedOffline] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isLoadingToday, setIsLoadingToday] = useState(true);
   const [now, setNow] = useState(() => new Date());
@@ -52,6 +55,7 @@ export default function TodayPage() {
   const fillPercent = Math.min(100, Math.round((water / goal) * 100));
   const hydrationLabel = getHydrationLabel(fillPercent);
   const { tilt, supported: tiltSupported, permission: tiltPermission, enableTilt } = useDeviceTilt();
+  const { pendingCount, isOnline } = useOfflineSync();
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -69,6 +73,12 @@ export default function TodayPage() {
     const loadToday = async () => {
       setIsLoadingToday(true);
       const today = formatLocalDate(new Date());
+
+      // Writes queued while offline are newer than anything on the server,
+      // so they win over fetched rows (and are all we have when offline).
+      const queuedToday = getQueuedSave(userId, today);
+      const queuedYesterday = getQueuedSave(userId, yesterdayDate);
+
       const { data, error } = await supabase
         .from("daily_water")
         .select("date, water_ml")
@@ -77,6 +87,8 @@ export default function TodayPage() {
 
       if (error) {
         console.error("Error loading daily water:", error);
+        if (queuedToday) setWater(clampWater(queuedToday.water_ml));
+        if (queuedYesterday) setYesterdayWater(String(queuedYesterday.water_ml));
         setIsLoadingToday(false);
         return;
       }
@@ -84,10 +96,13 @@ export default function TodayPage() {
       const todayRow = data?.find((row) => row.date === today);
       const yesterdayRow = data?.find((row) => row.date === yesterdayDate);
 
-      if (todayRow?.water_ml != null) {
-        setWater(clampWater(todayRow.water_ml));
+      const todayMl = queuedToday?.water_ml ?? todayRow?.water_ml;
+      const yesterdayMl = queuedYesterday?.water_ml ?? yesterdayRow?.water_ml;
+
+      if (todayMl != null) {
+        setWater(clampWater(todayMl));
       }
-      setYesterdayWater(yesterdayRow?.water_ml != null ? String(yesterdayRow.water_ml) : "");
+      setYesterdayWater(yesterdayMl != null ? String(yesterdayMl) : "");
       setIsLoadingToday(false);
     };
 
@@ -162,20 +177,21 @@ export default function TodayPage() {
     }
 
     setSaveError(null);
+    setSavedOffline(false);
 
     const today = formatLocalDate(new Date());
+    const entry = { user_id: userId, date: today, water_ml: clampWater(water) };
     const { error } = await supabase
       .from("daily_water")
-      .upsert(
-        {
-          user_id: userId,
-          date: today,
-          water_ml: clampWater(water),
-        },
-        { onConflict: "user_id,date" }
-      );
+      .upsert(entry, { onConflict: "user_id,date" });
 
     if (error) {
+      if (isOfflineError(error)) {
+        queueWaterSave(entry);
+        setSaved(true);
+        setSavedOffline(true);
+        return;
+      }
       console.error("Error saving daily water:", error);
       setSaveError("Something went wrong saving your data. Please try again.");
       return;
@@ -198,20 +214,19 @@ export default function TodayPage() {
     setIsSavingYesterday(true);
     setYesterdaySaveError(null);
 
+    const entry = { user_id: userId, date: yesterdayDate, water_ml: clampWater(amount) };
     const { error } = await supabase
       .from("daily_water")
-      .upsert(
-        {
-          user_id: userId,
-          date: yesterdayDate,
-          water_ml: clampWater(amount),
-        },
-        { onConflict: "user_id,date" }
-      );
+      .upsert(entry, { onConflict: "user_id,date" });
 
     setIsSavingYesterday(false);
 
     if (error) {
+      if (isOfflineError(error)) {
+        queueWaterSave(entry);
+        setYesterdaySaved(true);
+        return;
+      }
       console.error("Error saving yesterday's water:", error);
       setYesterdaySaveError("Something went wrong saving that. Please try again.");
       return;
@@ -399,11 +414,23 @@ export default function TodayPage() {
           </button>
           {saved ? (
             <p className="animate-fade-in text-xs font-medium text-slate-500">
-              Saved for today. You can keep tracking anytime.
+              {savedOffline
+                ? "Saved on this device — it will sync when you're back online."
+                : "Saved for today. You can keep tracking anytime."}
             </p>
           ) : null}
           {saveError ? (
             <p className="text-xs font-medium text-rose-500">{saveError}</p>
+          ) : null}
+          {!isOnline || pendingCount > 0 ? (
+            <p className="flex items-center gap-1.5 text-xs font-medium text-amber-600">
+              <span className="material-symbols-outlined text-[14px]">
+                {isOnline ? "sync" : "cloud_off"}
+              </span>
+              {!isOnline
+                ? "You're offline — saves are kept on this device."
+                : `Syncing ${pendingCount} saved ${pendingCount === 1 ? "entry" : "entries"}…`}
+            </p>
           ) : null}
 
           <div className="flex flex-wrap items-center justify-center gap-3">
