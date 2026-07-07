@@ -10,7 +10,7 @@ import { useProfile } from "@/lib/useProfile";
 import { usePartner } from "@/lib/usePartner";
 import { clampWater, MAX_SINGLE_ENTRY_ML } from "@/lib/water";
 import { getRandomHydrationMessage } from "@/lib/hydrationMessages";
-import { getQueuedSave, isOfflineError, queueWaterSave } from "@/lib/offlineQueue";
+import { cacheKnownTotal, getKnownTotal, getQueuedSave, isOfflineError, queueWaterSave } from "@/lib/offlineQueue";
 import { useOfflineSync } from "@/lib/useOfflineSync";
 import { useDeviceTilt } from "@/lib/useDeviceTilt";
 import UserAvatar from "@/components/UserAvatar";
@@ -27,7 +27,6 @@ export default function TodayPage() {
   const [savedOffline, setSavedOffline] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isLoadingToday, setIsLoadingToday] = useState(true);
-  const [now, setNow] = useState(() => new Date());
   const { user, loading } = useUser();
   const userId = user?.id ?? null;
   const { currentName, partnerName } = getUserNames(user?.email);
@@ -54,16 +53,8 @@ export default function TodayPage() {
   // Derived display values.
   const fillPercent = Math.min(100, Math.round((water / goal) * 100));
   const hydrationLabel = getHydrationLabel(fillPercent);
-  const { tilt, supported: tiltSupported, permission: tiltPermission, enableTilt } = useDeviceTilt();
+  const { supported: tiltSupported, permission: tiltPermission, enableTilt, tiltEnabled } = useDeviceTilt();
   const { pendingCount, isOnline } = useOfflineSync();
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setNow(new Date());
-    }, 1000);
-
-    return () => clearInterval(intervalId);
-  }, []);
 
   useEffect(() => {
     if (loading || !userId) {
@@ -87,7 +78,8 @@ export default function TodayPage() {
 
       if (error) {
         console.error("Error loading daily water:", error);
-        if (queuedToday) setWater(clampWater(queuedToday.water_ml));
+        const fallbackToday = queuedToday?.water_ml ?? getKnownTotal(userId, today);
+        if (fallbackToday != null) setWater(clampWater(fallbackToday));
         if (queuedYesterday) setYesterdayWater(String(queuedYesterday.water_ml));
         setIsLoadingToday(false);
         return;
@@ -101,6 +93,7 @@ export default function TodayPage() {
 
       if (todayMl != null) {
         setWater(clampWater(todayMl));
+        cacheKnownTotal(userId, today, clampWater(todayMl));
       }
       setYesterdayWater(yesterdayMl != null ? String(yesterdayMl) : "");
       setIsLoadingToday(false);
@@ -188,6 +181,7 @@ export default function TodayPage() {
     if (error) {
       if (isOfflineError(error)) {
         queueWaterSave(entry);
+        cacheKnownTotal(userId, today, entry.water_ml);
         setSaved(true);
         setSavedOffline(true);
         return;
@@ -197,6 +191,7 @@ export default function TodayPage() {
       return;
     }
 
+    cacheKnownTotal(userId, today, entry.water_ml);
     setSaved(true);
   };
 
@@ -255,7 +250,7 @@ export default function TodayPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col overflow-hidden bg-[#F7FAFF] text-slate-800 transition-colors duration-200 dark:bg-gradient-to-br dark:from-[#f3ecff] dark:via-[#e8f5ff] dark:to-[#e8fff1] dark:text-slate-800">
+    <div className="relative flex min-h-svh w-full flex-col overflow-hidden bg-[#F7FAFF] text-slate-800 transition-colors duration-200 dark:bg-gradient-to-br dark:from-[#f3ecff] dark:via-[#e8f5ff] dark:to-[#e8fff1] dark:text-slate-800">
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-70">
         <div className="absolute left-[-10%] top-[-20%] h-[60%] w-[60%] rounded-full bg-[#E9E2FF]/35 blur-[120px] dark:bg-brand/10" />
         <div className="absolute bottom-[-20%] right-[-10%] h-[60%] w-[60%] rounded-full bg-brand/10 blur-[140px]" />
@@ -289,17 +284,10 @@ export default function TodayPage() {
       </header>
 
       <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-4 pb-10 pt-8 sm:pt-10">
-        <div className="mb-8 text-center">
-          <p className="mb-1 text-sm font-medium uppercase tracking-wider text-slate-500 dark:text-slate-500">
-            {formatDateTime(now)}
-          </p>
-          <p className="text-2xl font-light text-slate-800 dark:text-slate-800 md:text-3xl">
-            {getGreeting(now)}, {greetingName}.
-          </p>
-        </div>
+        <LiveClock greetingName={greetingName} />
 
         <div className="relative mb-10 flex h-[260px] w-[260px] items-center justify-center sm:h-[320px] sm:w-[320px] md:h-[400px] md:w-[400px]">
-          <WaterFill fillPercent={fillPercent} tilt={tilt} />
+          <WaterFill fillPercent={fillPercent} tiltEnabled={tiltEnabled} />
 
           {tiltSupported && tiltPermission !== "granted" && tiltPermission !== "unnecessary" ? (
             <button
@@ -533,6 +521,38 @@ export default function TodayPage() {
         <div className="absolute right-[-5%] top-[-10%] h-[500px] w-[500px] rounded-full bg-[#9BD7FF]/5 blur-[100px]" />
         <div className="absolute bottom-[-10%] left-[-5%] h-[400px] w-[400px] rounded-full bg-blue-400/5 blur-[80px]" />
       </div>
+    </div>
+  );
+}
+
+// Isolated so the once-a-minute tick re-renders only this header line, not
+// the whole page (a full-page 1s interval was a scroll-jank source on mobile).
+function LiveClock({ greetingName }: { greetingName: string }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    // Align the first tick to the next minute boundary so the display is
+    // never stale, then tick every 60s.
+    const timeoutId = setTimeout(() => {
+      setNow(new Date());
+      intervalId = setInterval(() => setNow(new Date()), 60_000);
+    }, (60 - new Date().getSeconds()) * 1000);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
+
+  return (
+    <div className="mb-8 text-center">
+      <p className="mb-1 text-sm font-medium uppercase tracking-wider text-slate-500 dark:text-slate-500">
+        {formatDateTime(now)}
+      </p>
+      <p className="text-2xl font-light text-slate-800 dark:text-slate-800 md:text-3xl">
+        {getGreeting(now)}, {greetingName}.
+      </p>
     </div>
   );
 }

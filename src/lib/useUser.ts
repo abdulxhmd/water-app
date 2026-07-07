@@ -16,12 +16,15 @@ export function useUser(): UseUserResult {
     let isMounted = true;
 
     const loadUser = async () => {
-      const { data } = await supabase.auth.getUser();
+      // getSession() reads the locally persisted session without a network
+      // round trip, so auth still resolves while offline (getUser() would
+      // fail and lock the whole app out).
+      const { data } = await supabase.auth.getSession();
       if (!isMounted) {
         return;
       }
 
-      setUser(data.user ?? null);
+      setUser(data.session?.user ?? null);
       setLoading(false);
     };
 

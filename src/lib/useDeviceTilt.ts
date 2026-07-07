@@ -1,46 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type TiltPermission = "unknown" | "unnecessary" | "granted" | "denied";
 
-type DeviceOrientationEventWithPermission = typeof DeviceOrientationEvent & {
+type DeviceMotionEventWithPermission = typeof DeviceMotionEvent & {
   requestPermission?: () => Promise<"granted" | "denied">;
 };
 
-const MAX_GAMMA = 30;
-
 function detectSupport() {
-  return typeof window !== "undefined" && "DeviceOrientationEvent" in window;
+  return typeof window !== "undefined" && "DeviceMotionEvent" in window;
 }
 
 function detectInitialPermission(): TiltPermission {
   if (!detectSupport()) return "unknown";
-  const requestPermission = (DeviceOrientationEvent as DeviceOrientationEventWithPermission)
+  const requestPermission = (DeviceMotionEvent as DeviceMotionEventWithPermission)
     .requestPermission;
   return typeof requestPermission === "function" ? "unknown" : "unnecessary";
 }
 
+// Manages only the permission handshake (iOS gates devicemotion behind a
+// user-gesture prompt). The actual sensor subscription lives in WaterFill,
+// which writes the gravity angle to a CSS variable — never through React
+// state, since the sensor fires at up to 60Hz.
 export function useDeviceTilt() {
-  const [tilt, setTilt] = useState(0);
   const [supported] = useState(detectSupport);
   const [permission, setPermission] = useState<TiltPermission>(detectInitialPermission);
 
-  useEffect(() => {
-    if (permission !== "granted" && permission !== "unnecessary") return;
-
-    const handleOrientation = (event: DeviceOrientationEvent) => {
-      if (event.gamma == null) return;
-      const clamped = Math.max(-MAX_GAMMA, Math.min(MAX_GAMMA, event.gamma));
-      setTilt(clamped / MAX_GAMMA);
-    };
-
-    window.addEventListener("deviceorientation", handleOrientation);
-    return () => window.removeEventListener("deviceorientation", handleOrientation);
-  }, [permission]);
-
   const enableTilt = async () => {
-    const requestPermission = (DeviceOrientationEvent as DeviceOrientationEventWithPermission)
+    const requestPermission = (DeviceMotionEvent as DeviceMotionEventWithPermission)
       .requestPermission;
 
     if (typeof requestPermission !== "function") {
@@ -56,5 +44,7 @@ export function useDeviceTilt() {
     }
   };
 
-  return { tilt, supported, permission, enableTilt };
+  const tiltEnabled = supported && (permission === "granted" || permission === "unnecessary");
+
+  return { supported, permission, enableTilt, tiltEnabled };
 }

@@ -62,6 +62,30 @@ export function onQueueChange(listener: () => void): () => void {
   };
 }
 
+// Last total we saw for a (user, date) — from a successful load or save —
+// so reopening the app offline shows the real number instead of 0.
+const KNOWN_TOTAL_KEY = "water-app:known-total";
+
+export function cacheKnownTotal(userId: string, date: string, waterMl: number) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    KNOWN_TOTAL_KEY,
+    JSON.stringify({ userId, date, waterMl })
+  );
+}
+
+export function getKnownTotal(userId: string, date: string): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(KNOWN_TOTAL_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as { userId: string; date: string; waterMl: number };
+    return cached.userId === userId && cached.date === date ? cached.waterMl : null;
+  } catch {
+    return null;
+  }
+}
+
 // Treat fetch-level failures as "offline"; anything else (RLS, validation)
 // is a real error that queuing would never fix.
 export function isOfflineError(error: { message?: string } | null): boolean {
