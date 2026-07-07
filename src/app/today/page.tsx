@@ -4,18 +4,45 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useUser } from "@/lib/useUser";
+import { formatLocalDate, formatShortDate, getPreviousLocalDate } from "@/lib/date";
+import { getUserNames } from "@/lib/users";
+import { useProfile } from "@/lib/useProfile";
+import { usePartner } from "@/lib/usePartner";
+import { clampWater, MAX_SINGLE_ENTRY_ML } from "@/lib/water";
+import UserAvatar from "@/components/UserAvatar";
+import PageFooter from "@/components/PageFooter";
 
 export default function TodayPage() {
   // Core state for today.
   const [water, setWater] = useState(0);
   const [customAmount, setCustomAmount] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customError, setCustomError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isLoadingToday, setIsLoadingToday] = useState(true);
   const [now, setNow] = useState(() => new Date());
   const { user, loading } = useUser();
   const userId = user?.id ?? null;
-  const { currentName } = getUserNames(user?.email);
+  const { currentName, partnerName } = getUserNames(user?.email);
+  const greetingName = currentName === "You" ? "there" : currentName;
+  const avatarUrl = useProfile(userId);
   const goal = 4000; // Daily target in milliliters.
+
+  // "Log yesterday" support: lets someone who forgot to save before midnight
+  // correct the previous day's total from today's screen.
+  const yesterdayDate = formatLocalDate(getPreviousLocalDate(new Date()));
+  const [showYesterdayEditor, setShowYesterdayEditor] = useState(false);
+  const [yesterdayWater, setYesterdayWater] = useState("");
+  const [yesterdaySaved, setYesterdaySaved] = useState(false);
+  const [yesterdaySaveError, setYesterdaySaveError] = useState<string | null>(null);
+  const [isSavingYesterday, setIsSavingYesterday] = useState(false);
+
+  // "Remind partner" support: a manual nudge push, gated on the partner
+  // having opted into `partner_reminder` in their own settings.
+  const { partnerId } = usePartner(userId, loading);
+  const [partnerAllowsReminders, setPartnerAllowsReminders] = useState(false);
+  const [reminderSentStatus, setReminderSentStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
 
   // Derived display values.
   const fillPercent = Math.min(100, Math.round((water / goal) * 100));
@@ -35,55 +62,101 @@ export default function TodayPage() {
     }
 
     const loadToday = async () => {
+      setIsLoadingToday(true);
       const today = formatLocalDate(new Date());
       const { data, error } = await supabase
         .from("daily_water")
-        .select("water_ml")
+        .select("date, water_ml")
         .eq("user_id", userId)
-        .eq("date", today)
-        .maybeSingle();
+        .in("date", [today, yesterdayDate]);
 
       if (error) {
         console.error("Error loading daily water:", error);
+        setIsLoadingToday(false);
         return;
       }
 
-      if (data?.water_ml != null) {
-        setWater(Math.max(0, data.water_ml));
+      const todayRow = data?.find((row) => row.date === today);
+      const yesterdayRow = data?.find((row) => row.date === yesterdayDate);
+
+      if (todayRow?.water_ml != null) {
+        setWater(clampWater(todayRow.water_ml));
       }
+      setYesterdayWater(yesterdayRow?.water_ml != null ? String(yesterdayRow.water_ml) : "");
+      setIsLoadingToday(false);
     };
 
     loadToday();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, userId]);
+
+  useEffect(() => {
+    if (!partnerId) {
+      setPartnerAllowsReminders(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    supabase
+      .from("user_preferences")
+      .select("partner_reminder")
+      .eq("user_id", partnerId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!isMounted) return;
+        if (error) {
+          console.error("Error loading partner reminder preference:", error);
+          return;
+        }
+        setPartnerAllowsReminders(data?.partner_reminder ?? false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [partnerId]);
 
   // Shared handlers for custom input.
   const handleAddCustom = () => {
     const amount = Number(customAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setCustomAmount("");
+      setCustomError("Enter a positive number of ml.");
+      return;
+    }
+    if (amount > MAX_SINGLE_ENTRY_ML) {
+      setCustomError(`Single entries are capped at ${MAX_SINGLE_ENTRY_ML.toLocaleString()} ml.`);
       return;
     }
 
-    setWater((prevWater) => Math.max(0, prevWater + amount));
+    setWater((prevWater) => clampWater(prevWater + amount));
     setCustomAmount("");
+    setCustomError(null);
   };
   const handleSubtractCustom = () => {
     const amount = Number(customAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setCustomAmount("");
+      setCustomError("Enter a positive number of ml.");
+      return;
+    }
+    if (amount > MAX_SINGLE_ENTRY_ML) {
+      setCustomError(`Single entries are capped at ${MAX_SINGLE_ENTRY_ML.toLocaleString()} ml.`);
       return;
     }
 
-    setWater((prevWater) => Math.max(0, prevWater - amount));
+    setWater((prevWater) => clampWater(prevWater - amount));
     setCustomAmount("");
+    setCustomError(null);
   };
   const handleQuickAdd = (amount: number) => {
-    setWater((prevWater) => Math.max(0, prevWater + amount));
+    setWater((prevWater) => clampWater(prevWater + amount));
   };
   const handleSaveToday = async () => {
     if (loading || !userId) {
       return;
     }
+
+    setSaveError(null);
 
     const today = formatLocalDate(new Date());
     const { error } = await supabase
@@ -92,18 +165,73 @@ export default function TodayPage() {
         {
           user_id: userId,
           date: today,
-          water_ml: Math.max(0, water),
+          water_ml: clampWater(water),
         },
         { onConflict: "user_id,date" }
       );
 
     if (error) {
       console.error("Error saving daily water:", error);
-      alert("Something went wrong saving data");
+      setSaveError("Something went wrong saving your data. Please try again.");
       return;
     }
 
     setSaved(true);
+  };
+
+  const handleSaveYesterday = async () => {
+    if (loading || !userId) {
+      return;
+    }
+
+    const amount = Number(yesterdayWater);
+    if (!Number.isFinite(amount) || amount < 0) {
+      setYesterdaySaveError("Enter a non-negative number of ml.");
+      return;
+    }
+
+    setIsSavingYesterday(true);
+    setYesterdaySaveError(null);
+
+    const { error } = await supabase
+      .from("daily_water")
+      .upsert(
+        {
+          user_id: userId,
+          date: yesterdayDate,
+          water_ml: clampWater(amount),
+        },
+        { onConflict: "user_id,date" }
+      );
+
+    setIsSavingYesterday(false);
+
+    if (error) {
+      console.error("Error saving yesterday's water:", error);
+      setYesterdaySaveError("Something went wrong saving that. Please try again.");
+      return;
+    }
+
+    setYesterdaySaved(true);
+  };
+
+  const handleRemindPartner = async () => {
+    if (!partnerId || reminderSentStatus === "sending") {
+      return;
+    }
+
+    setReminderSentStatus("sending");
+
+    const { error } = await supabase.functions.invoke("send-push", {
+      body: {
+        targetUserId: partnerId,
+        title: `${currentName} sent a reminder`,
+        body: "Time to drink some water!",
+        url: "/today",
+      },
+    });
+
+    setReminderSentStatus(error ? "error" : "sent");
   };
 
   return (
@@ -136,13 +264,7 @@ export default function TodayPage() {
           >
             Settings
           </Link>
-          <div className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-white shadow-sm dark:border-[#dbe6f2] sm:h-10 sm:w-10">
-            <img
-              alt="User profile avatar"
-              className="h-full w-full object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuAfvs6OlZK_w1BLHOt_bAX5iTu4TLBka-wO4AuP2P4E_lUTblQlF0DAdGvO7LIBH3722F4O44wkpuVaZbhWBiV7NeVnaoV1ksPyDshJCFL8P5iNBQTRCmqUZD5AIQ7TGM_dtpKa3yFOERA0pT77q1p1WVZvdQHE53xaCBPAXEB5bTMWQt_V2r-mdJgltKVFd6mLzQ3j68Ne7bLxI27n0o3wfTB-hd72RdHOxnSE6AYCMLcpmL5R744pB67opzaMedj0cUyMyyIMuGo"
-            />
-          </div>
+          <UserAvatar avatarUrl={avatarUrl} name={currentName} />
         </div>
       </header>
 
@@ -152,7 +274,7 @@ export default function TodayPage() {
             {formatDateTime(now)}
           </p>
           <p className="text-2xl font-light text-slate-800 dark:text-slate-800 md:text-3xl">
-            Good morning, {currentName}.
+            Good morning, {greetingName}.
           </p>
         </div>
 
@@ -164,18 +286,18 @@ export default function TodayPage() {
             />
           </div>
 
-          <div className="z-10 flex flex-col items-center text-center">
+          <div className={`z-10 flex flex-col items-center text-center ${isLoadingToday ? "animate-pulse opacity-60" : ""}`}>
             <span className="text-6xl font-bold tracking-tighter text-slate-800 dark:text-slate-800 md:text-7xl">
-              {water}
+              {isLoadingToday ? "—" : water}
             </span>
             <span className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-600">
-              {fillPercent}% hydrated
+              {isLoadingToday ? "Loading…" : `${fillPercent}% hydrated`}
             </span>
             <span className="mt-1 text-lg font-medium text-slate-500 dark:text-slate-500">
               / {goal.toLocaleString()} ml
             </span>
             <div className="mt-4 rounded-full border border-white/20 bg-white/70 px-4 py-1.5 text-sm font-medium text-[#7FB8FF] backdrop-blur-sm dark:bg-white/80">
-              {hydrationLabel}
+              {isLoadingToday ? "Fetching today's total" : hydrationLabel}
             </div>
           </div>
         </div>
@@ -185,7 +307,10 @@ export default function TodayPage() {
             <div className="group relative">
               <div className="absolute -inset-1 rounded-full bg-[#7FB8FF]/30 blur opacity-40 transition duration-200 group-hover:opacity-75" />
               <button
-                onClick={() => setShowCustomInput(true)}
+                onClick={() => {
+                  setShowCustomInput(true);
+                  setCustomError(null);
+                }}
                 className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#9cc7ff] via-[#c5b4ff] to-[#b9f0d2] text-white shadow-[0_18px_35px_rgba(127,184,255,0.35)] transition-all duration-200 hover:scale-105 active:scale-95 md:h-20 md:w-20"
               >
                 <span className="material-symbols-outlined text-[32px] md:text-[40px]">
@@ -194,29 +319,39 @@ export default function TodayPage() {
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <div className="flex w-44 items-center gap-2 rounded-2xl border border-[#E3E8F5] bg-white/80 px-3 py-2 shadow-sm sm:w-56">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={customAmount}
-                  onChange={(event) => setCustomAmount(event.target.value)}
-                  placeholder="Custom ml"
-                  className="w-full bg-transparent text-sm text-slate-700 outline-none"
-                />
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex items-center gap-3">
+                <div className="flex w-44 items-center gap-2 rounded-2xl border border-[#E3E8F5] bg-white/80 px-3 py-2 shadow-sm sm:w-56">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={MAX_SINGLE_ENTRY_ML}
+                    value={customAmount}
+                    onChange={(event) => {
+                      setCustomAmount(event.target.value);
+                      setCustomError(null);
+                    }}
+                    placeholder="Custom ml"
+                    className="w-full bg-transparent text-sm text-slate-700 outline-none"
+                  />
+                </div>
+                <button
+                  onClick={handleSubtractCustom}
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-[#E3E8F5] bg-white/80 text-slate-500 shadow-sm transition-all hover:scale-105 active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-[24px]">remove</span>
+                </button>
+                <button
+                  onClick={handleAddCustom}
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-[#E3E8F5] bg-white/80 text-[#7FB8FF] shadow-sm transition-all hover:scale-105 active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-[24px]">add</span>
+                </button>
               </div>
-              <button
-                onClick={handleSubtractCustom}
-                className="flex h-12 w-12 items-center justify-center rounded-full border border-[#E3E8F5] bg-white/80 text-slate-500 shadow-sm transition-all hover:scale-105 active:scale-95"
-              >
-                <span className="material-symbols-outlined text-[24px]">remove</span>
-              </button>
-              <button
-                onClick={handleAddCustom}
-                className="flex h-12 w-12 items-center justify-center rounded-full border border-[#E3E8F5] bg-white/80 text-[#7FB8FF] shadow-sm transition-all hover:scale-105 active:scale-95"
-              >
-                <span className="material-symbols-outlined text-[24px]">add</span>
-              </button>
+              {customError ? (
+                <p className="text-xs font-medium text-rose-500">{customError}</p>
+              ) : null}
             </div>
           )}
 
@@ -242,7 +377,7 @@ export default function TodayPage() {
           </div>
           <button
             onClick={handleSaveToday}
-            disabled={saved}
+            disabled={saved || isLoadingToday}
             className={`rounded-full border border-[#E3E8F5] px-5 py-2 text-sm font-medium shadow-sm transition-all ${
               saved
                 ? "bg-white/60 text-slate-500"
@@ -255,6 +390,83 @@ export default function TodayPage() {
             <p className="animate-fade-in text-xs font-medium text-slate-500">
               Saved for today. You can keep tracking anytime.
             </p>
+          ) : null}
+          {saveError ? (
+            <p className="text-xs font-medium text-rose-500">{saveError}</p>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {!showYesterdayEditor ? (
+              <button
+                type="button"
+                onClick={() => setShowYesterdayEditor(true)}
+                className="text-xs font-medium text-slate-500 underline transition-colors hover:text-[#7FB8FF]"
+              >
+                Forgot to log yesterday?
+              </button>
+            ) : null}
+
+            {partnerId ? (
+              <button
+                type="button"
+                onClick={handleRemindPartner}
+                disabled={!partnerAllowsReminders || reminderSentStatus === "sending"}
+                title={
+                  partnerAllowsReminders
+                    ? undefined
+                    : `${partnerName} has partner reminders turned off`
+                }
+                className="rounded-full border border-[#E3E8F5] bg-white/80 px-4 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition-all hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {reminderSentStatus === "sent"
+                  ? "Reminder sent"
+                  : reminderSentStatus === "sending"
+                    ? "Sending…"
+                    : `Remind ${partnerName}`}
+              </button>
+            ) : null}
+          </div>
+          {reminderSentStatus === "error" ? (
+            <p className="text-xs font-medium text-rose-500">
+              Could not send the reminder. Please try again.
+            </p>
+          ) : null}
+
+          {showYesterdayEditor ? (
+            <div className="w-full max-w-xs rounded-2xl border border-[#E3E8F5] bg-white/80 p-4 shadow-sm">
+              <p className="text-sm font-medium text-slate-700">
+                {formatShortDate(yesterdayDate)}&apos;s water
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={yesterdayWater}
+                  onChange={(event) => {
+                    setYesterdayWater(event.target.value);
+                    setYesterdaySaved(false);
+                    setYesterdaySaveError(null);
+                  }}
+                  placeholder="Total ml"
+                  className="w-full rounded-lg border border-[#E3E8F5] bg-white px-3 py-2 text-sm text-slate-700 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveYesterday}
+                  disabled={isSavingYesterday}
+                  className="shrink-0 rounded-lg bg-gradient-to-r from-[#9cc7ff] via-[#c5b4ff] to-[#b9f0d2] px-4 py-2 text-sm font-medium text-white shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSavingYesterday ? "Saving…" : "Save"}
+                </button>
+              </div>
+              {yesterdaySaved ? (
+                <p className="mt-2 text-xs font-medium text-slate-500">Saved.</p>
+              ) : null}
+              {yesterdaySaveError ? (
+                <p className="mt-2 text-xs font-medium text-rose-500">{yesterdaySaveError}</p>
+              ) : null}
+            </div>
           ) : null}
         </div>
 
@@ -277,22 +489,7 @@ export default function TodayPage() {
         </div>
       </main>
 
-      <footer className="relative z-10 mt-auto border-t border-[#E3E8F5] bg-white/70 px-4 py-6 text-xs text-slate-500 backdrop-blur-md dark:border-[#dbe6f2] dark:bg-[#eef7ff]/70 dark:text-slate-600 sm:px-6 md:px-10">
-        <div className="mx-auto flex max-w-4xl flex-col items-center gap-3 sm:flex-row sm:justify-between">
-          <p>Hydration, shared.</p>
-          <div className="flex gap-4">
-            <a className="transition-colors hover:text-[#7FB8FF]" href="#">
-              Privacy
-            </a>
-            <a className="transition-colors hover:text-[#7FB8FF]" href="#">
-              Terms
-            </a>
-            <a className="transition-colors hover:text-[#7FB8FF]" href="#">
-              Help
-            </a>
-          </div>
-        </div>
-      </footer>
+      <PageFooter />
 
       <div className="pointer-events-none fixed left-0 top-0 -z-10 h-full w-full overflow-hidden">
         <div className="absolute right-[-5%] top-[-10%] h-[500px] w-[500px] rounded-full bg-[#9BD7FF]/5 blur-[100px]" />
@@ -318,22 +515,6 @@ function getHydrationLabel(fillPercent: number) {
   return "Reached the goal";
 }
 
-function getUserNames(email?: string | null) {
-  const normalized = email?.split("@")[0]?.toLowerCase() ?? "";
-  const userAName = "Shahul";
-  const userBName = "Shaima";
-
-  if (normalized === userBName.toLowerCase()) {
-    return { currentName: userBName, partnerName: userAName };
-  }
-
-  if (normalized === userAName.toLowerCase()) {
-    return { currentName: userAName, partnerName: userBName };
-  }
-
-  return { currentName: "there", partnerName: "Partner" };
-}
-
 function formatDateTime(date: Date) {
   // Use fixed UTC-based format to avoid hydration mismatch
   const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -348,14 +529,5 @@ function formatDateTime(date: Date) {
   
   return `${weekday}, ${month} ${day}, ${hour}:${minute} ${ampm}`;
 }
-
-function formatLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
 
 

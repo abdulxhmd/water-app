@@ -7,7 +7,7 @@ import NavBar from "@/components/NavBar";
 import { useUser } from "@/lib/useUser";
 
 const PROTECTED_ROUTES = new Set(["/today", "/week", "/month", "/settings"]);
-const AUTH_ROUTES = new Set(["/", "/login"]);
+const AUTH_ROUTES = new Set(["/", "/login", "/setup-passcode"]);
 
 type AuthGateProps = {
   children: ReactNode;

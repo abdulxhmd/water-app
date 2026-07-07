@@ -1,15 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
 import { useUser } from "@/lib/useUser";
 import { usePushNotifications } from "@/lib/usePushNotifications";
+import { getUserNames } from "@/lib/users";
+import { buildPassword } from "@/lib/credentials";
+import UserAvatar from "@/components/UserAvatar";
+import PageFooter from "@/components/PageFooter";
+
+const THEMES = ["calm", "focused", "bold"] as const;
+type Theme = (typeof THEMES)[number];
+
+const MAX_AVATAR_BYTES = 3 * 1024 * 1024;
 
 export default function SettingsPage() {
   const router = useRouter();
   const { user, loading } = useUser();
+  const { currentName } = getUserNames(user?.email);
   const { status: pushStatus, subscribe, unsubscribe, checkStatus } = usePushNotifications();
 
   // Reminder preferences
@@ -17,12 +27,19 @@ export default function SettingsPage() {
   const [partnerReminder, setPartnerReminder] = useState(false);
   const [reminderStatus, setReminderStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  // Presence: avatar + theme
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>("calm");
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [presenceStatus, setPresenceStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+
   // Passcode
   const [newPin, setNewPin] = useState("");
   const [pinStatus, setPinStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Load saved reminder preferences on mount
+  // Load saved preferences on mount
   useEffect(() => {
     if (loading || !user) return;
     checkStatus();
@@ -30,7 +47,7 @@ export default function SettingsPage() {
     const loadPreferences = async () => {
       const { data, error } = await supabase
         .from("user_preferences")
-        .select("daily_reminder, partner_reminder")
+        .select("daily_reminder, partner_reminder, avatar_url, theme")
         .eq("user_id", user.id)
         .maybeSingle();
 
@@ -42,12 +59,81 @@ export default function SettingsPage() {
       if (data) {
         setDailyReminder(data.daily_reminder ?? false);
         setPartnerReminder(data.partner_reminder ?? false);
+        setAvatarUrl(data.avatar_url ?? null);
+        if (data.theme && (THEMES as readonly string[]).includes(data.theme)) {
+          setTheme(data.theme as Theme);
+        }
       }
     };
 
     loadPreferences();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, user]);
+
+  const handleAvatarFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !user) return;
+
+    if (!file.type.startsWith("image/")) {
+      setPresenceStatus({ type: "error", message: "Please choose an image file." });
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      setPresenceStatus({ type: "error", message: "Image must be smaller than 3MB." });
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    setPresenceStatus(null);
+
+    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const path = `${user.id}/avatar.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(path, file, { upsert: true, cacheControl: "3600" });
+
+    if (uploadError) {
+      setIsUploadingAvatar(false);
+      setPresenceStatus({ type: "error", message: "Could not upload avatar." });
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage.from("avatars").getPublicUrl(path);
+    const nextAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+    const { error: saveError } = await supabase
+      .from("user_preferences")
+      .upsert({ user_id: user.id, avatar_url: nextAvatarUrl }, { onConflict: "user_id" });
+
+    setIsUploadingAvatar(false);
+
+    if (saveError) {
+      setPresenceStatus({ type: "error", message: "Uploaded, but could not save your profile." });
+      return;
+    }
+
+    setAvatarUrl(nextAvatarUrl);
+    setPresenceStatus({ type: "success", message: "Avatar updated." });
+  };
+
+  const handleThemeChange = async (nextTheme: Theme) => {
+    if (!user || nextTheme === theme) return;
+
+    const previousTheme = theme;
+    setTheme(nextTheme);
+    setPresenceStatus(null);
+
+    const { error } = await supabase
+      .from("user_preferences")
+      .upsert({ user_id: user.id, theme: nextTheme }, { onConflict: "user_id" });
+
+    if (error) {
+      setTheme(previousTheme);
+      setPresenceStatus({ type: "error", message: "Could not save theme." });
+    }
+  };
 
   const handleReminderToggle = async (field: "daily_reminder" | "partner_reminder", value: boolean) => {
     if (!user) return;
@@ -70,9 +156,7 @@ export default function SettingsPage() {
     // If disabling daily reminder, unsubscribe from push
     if (field === "daily_reminder" && !value) {
       await unsubscribe(user.id);
-    }
-
-    const { error } = await supabase
+    }    const { error } = await supabase
       .from("user_preferences")
       .upsert(
         {
@@ -103,7 +187,7 @@ export default function SettingsPage() {
     setPinStatus(null);
 
     const { error } = await supabase.auth.updateUser({
-      password: `water-${newPin}-lock`,
+      password: buildPassword(newPin),
     });
 
     setIsUpdating(false);
@@ -137,18 +221,7 @@ export default function SettingsPage() {
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E9E2FF]/60 text-slate-700 transition-colors hover:bg-[#E9E2FF] dark:bg-white/70 dark:text-slate-800 dark:hover:bg-white/90 sm:h-10 sm:w-10">
-            <span className="material-symbols-outlined text-[20px]">settings</span>
-          </button>
-          <div className="h-9 w-9 overflow-hidden rounded-full border-2 border-white shadow-sm dark:border-[#dbe6f2] sm:h-10 sm:w-10">
-            <img
-              alt="User profile avatar"
-              className="h-full w-full object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuCIe4xJ3NQklg6TjFJB9jG_DVWW-_74hxLYA-9y5v-Rh9mIXkVKO4FlROp-5SKbqXUN0enafHlrCr6FIU0yy7bKlk1uRZ8hMTNRkmBvqCcM_fYequVRFSSfy2Qx0H6v9biZAO8LPEtUFZOB2TE7B_r1xpY_rv9IhtdwTYvm2sK0YCQSQ8nLKz7dtvWvuGR2IeorTtNsu8f_OR5nn_wnaxU5f8xq4BjYElx9y8DviJw21oPED4K6LPvaDETOkGbWH-CmoER83pXxPzE"
-            />
-          </div>
-        </div>
+        <UserAvatar avatarUrl={avatarUrl} name={currentName} />
       </header>
 
       <main className="flex flex-1 justify-center px-4 py-8 sm:px-6 lg:px-8">
@@ -171,25 +244,51 @@ export default function SettingsPage() {
             </p>
 
             <div className="mt-4 flex items-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#EEF7F1] text-lg dark:bg-[#eef7ff]">
-                🙂
-              </div>
-              <button className="text-sm text-slate-700 underline transition-colors hover:text-[#7FB8FF] dark:text-slate-600">
-                Change avatar
+              <UserAvatar
+                avatarUrl={avatarUrl}
+                name={currentName}
+                sizeClassName="h-14 w-14"
+                className="text-lg"
+              />
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarFileChange}
+              />
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+                className="text-sm text-slate-700 underline transition-colors hover:text-[#7FB8FF] disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-600"
+              >
+                {isUploadingAvatar ? "Uploading…" : "Change avatar"}
               </button>
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-3">
-              <button className="rounded-lg border border-[#E3E8F5] py-2 text-sm text-slate-700 transition-colors hover:border-[#7FB8FF]/40 hover:text-[#7FB8FF] dark:border-[#dbe6f2] dark:text-slate-700">
-                Calm
-              </button>
-              <button className="rounded-lg border border-[#E3E8F5] py-2 text-sm text-slate-700 transition-colors hover:border-[#7FB8FF]/40 hover:text-[#7FB8FF] dark:border-[#dbe6f2] dark:text-slate-700">
-                Focused
-              </button>
-              <button className="rounded-lg border border-[#E3E8F5] py-2 text-sm text-slate-700 transition-colors hover:border-[#7FB8FF]/40 hover:text-[#7FB8FF] dark:border-[#dbe6f2] dark:text-slate-700">
-                Bold
-              </button>
+              {THEMES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => handleThemeChange(option)}
+                  className={`rounded-lg border py-2 text-sm capitalize transition-colors ${
+                    theme === option
+                      ? "border-[#7FB8FF] bg-[#7FB8FF]/10 text-[#7FB8FF]"
+                      : "border-[#E3E8F5] text-slate-700 hover:border-[#7FB8FF]/40 hover:text-[#7FB8FF] dark:border-[#dbe6f2] dark:text-slate-700"
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
             </div>
+
+            {presenceStatus ? (
+              <p className={`mt-3 text-xs font-medium ${presenceStatus.type === "error" ? "text-rose-500" : "text-emerald-600"}`}>
+                {presenceStatus.message}
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-[#E3E8F5] bg-white p-6 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff]">
@@ -220,6 +319,13 @@ export default function SettingsPage() {
                   className="h-4 w-4 accent-[#7FB8FF]"
                 />
               </label>
+
+              {pushStatus === "denied" ? (
+                <p className="text-xs font-medium text-rose-500">
+                  Notifications are blocked in your browser. Allow them in your
+                  browser&apos;s site settings to receive reminders.
+                </p>
+              ) : null}
 
               {reminderStatus ? (
                 <p className={`text-xs font-medium ${reminderStatus.type === "error" ? "text-rose-500" : "text-emerald-600"}`}>
@@ -280,22 +386,7 @@ export default function SettingsPage() {
         </div>
       </main>
 
-      <footer className="mt-auto border-t border-[#E3E8F5] bg-white/70 px-4 py-6 text-xs text-slate-500 backdrop-blur-md dark:border-[#dbe6f2] dark:bg-[#eef7ff]/70 dark:text-slate-600 sm:px-6 lg:px-10">
-        <div className="mx-auto flex max-w-4xl flex-col items-center gap-3 sm:flex-row sm:justify-between">
-          <p>Hydration, shared.</p>
-          <div className="flex gap-4">
-            <a className="transition-colors hover:text-[#7FB8FF]" href="#">
-              Privacy
-            </a>
-            <a className="transition-colors hover:text-[#7FB8FF]" href="#">
-              Terms
-            </a>
-            <a className="transition-colors hover:text-[#7FB8FF]" href="#">
-              Help
-            </a>
-          </div>
-        </div>
-      </footer>
+      <PageFooter />
     </div>
   );
 }

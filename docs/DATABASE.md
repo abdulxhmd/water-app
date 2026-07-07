@@ -1,100 +1,138 @@
 # Database
 
 ## Source Of Truth
-The repository does not contain database migrations, SQL schema files, generated types, or Supabase config. Everything below is derived from live query usage in application code.
+The checked-in SQL migration at
+[`supabase/migrations/0001_baseline_and_features.sql`](../supabase/migrations/0001_baseline_and_features.sql)
+is the source of truth for schema, constraints, and Row Level Security
+policies. It's idempotent (`create table if not exists`, `drop policy if
+exists` + recreate) so it's safe to re-run against a database that already
+has the tables populated with real data.
 
-Where an item is not directly visible in code, it is marked as inferred.
+Run it once against a fresh or existing Supabase project via the SQL Editor,
+or `supabase db push` if you adopt the Supabase CLI locally. There is no
+Supabase CLI config (`supabase/config.toml`) checked in — only the Edge
+Function and this migration file.
 
 ## Database Provider
-- Supabase Postgres
+- Supabase Postgres, accessed directly from the browser via the public anon
+  key (`src/lib/supabase.ts`). There is no backend/API layer in this repo —
+  RLS is the only access control.
 
-## Confirmed Tables Referenced In Code
-- `daily_water`
-- `user_pairs`
-- `weekly_results`
-- `monthly_results`
-
-## Table-Level Understanding
+## Tables
 
 ### `daily_water`
-Confirmed usage:
-- queried by `user_id`
-- queried by `date`
-- selected column `water_ml`
-- upsert conflict target `user_id,date`
+One row per user per calendar day.
 
-Strong inference:
-- unique constraint exists on `(user_id, date)`
+| column     | type      | notes                                |
+|------------|-----------|---------------------------------------|
+| `user_id`  | uuid      | FK to `auth.users`, part of PK        |
+| `date`     | date      | local calendar date, part of PK       |
+| `water_ml` | integer   | clamped client-side to `[0, 20000]`   |
 
-Inferred shape:
-
-```text
-daily_water
-- user_id
-- date
-- water_ml
-```
-
-Purpose:
-- store one user's water total for a calendar day
+RLS: a user can always read/write their own rows, and read (not write) their
+paired partner's rows.
 
 ### `user_pairs`
-Confirmed usage:
-- queried where current user matches either `user_a_id` or `user_b_id`
-- result used to derive the partner user ID
+Defines the two-person pairing that powers weekly/monthly comparison.
 
-Inferred shape:
+| column       | type | notes                  |
+|--------------|------|------------------------|
+| `id`         | uuid | PK                     |
+| `user_a_id`  | uuid | FK to `auth.users`     |
+| `user_b_id`  | uuid | FK to `auth.users`     |
 
-```text
-user_pairs
-- user_a_id
-- user_b_id
-```
-
-Purpose:
-- define the two-person pairing that powers weekly/monthly comparison
+There is no app flow that creates a pairing — it's seeded by whoever
+administers the Supabase project (insert one row per pair directly, or via
+the SQL Editor). RLS only allows each half of a pair to *read* their own row.
 
 ### `weekly_results`
-Confirmed usage:
-- stores totals for a finished week
-- stores winner
-- keyed by week range and pair IDs in current code
+One row per completed week per pair, computed and inserted client-side once
+the week has ended (Monday–Sunday, unlocked the following Monday at local
+midnight — see `src/lib/date.ts`).
 
-Inferred shape:
+| column           | type    |
+|------------------|---------|
+| `id`             | uuid PK |
+| `week_start`     | date    |
+| `week_end`       | date    |
+| `user_a_id`      | uuid    |
+| `user_b_id`      | uuid    |
+| `user_a_total`   | integer |
+| `user_b_total`   | integer |
+| `winner`         | text — one of the two user ids, or `"tie"` |
 
-```text
-weekly_results
-- week_start
-- week_end
-- user_a_id
-- user_b_id
-- user_a_total
-- user_b_total
-- winner
-```
-
-Important implementation note:
-- the week page does not currently compute partner totals from `daily_water`
-- `weeklyTotals` is only populated when a `weekly_results` row already exists
-- this means insertion of a new weekly result may never happen from current code unless `weeklyTotals` is somehow set earlier
+Unique on `(week_start, week_end, user_a_id, user_b_id)`.
 
 ### `monthly_results`
-Confirmed usage:
-- stores monthly win counts and winner
-- inserted after month end when no row exists
+One row per completed calendar month per pair, computed from that month's
+`weekly_results` rows (win counts, not raw totals).
 
-Inferred shape:
+| column          | type    |
+|-----------------|---------|
+| `id`            | uuid PK |
+| `month_start`   | date    |
+| `month_end`     | date    |
+| `user_a_id`     | uuid    |
+| `user_b_id`     | uuid    |
+| `user_a_wins`   | integer |
+| `user_b_wins`   | integer |
+| `winner`        | text — one of the two user ids, or `"tie"` |
 
-```text
-monthly_results
-- month_start
-- month_end
-- user_a_id
-- user_b_id
-- user_a_wins
-- user_b_wins
-- winner
-```
+Unique on `(month_start, month_end, user_a_id, user_b_id)`.
+
+### `user_preferences`
+Per-user settings, one row per user.
+
+| column              | type    | notes                              |
+|---------------------|---------|-------------------------------------|
+| `user_id`           | uuid PK | FK to `auth.users`                  |
+| `daily_reminder`    | boolean | default false; opts into the scheduled `daily-reminder` push |
+| `partner_reminder`  | boolean | default false; whether this user allows their partner to send a manual "Remind" push |
+| `avatar_url`        | text    | nullable; public URL in the `avatars` storage bucket |
+| `theme`             | text    | one of `calm` / `focused` / `bold`, default `calm` |
+
+RLS: a user manages their own row; their paired partner can read it (for
+avatar display, and to check `partner_reminder` before showing the "Remind"
+button), but not write it.
+
+### `push_subscriptions`
+One row per user's web push subscription, written by `usePushNotifications`
+and read by the `send-push` / `daily-reminder` Edge Functions (via the shared
+`supabase/functions/_shared/push.ts` helper) using the service role key
+(which bypasses RLS). An expired/unsubscribed subscription is deleted
+automatically the next time a push to it is rejected by the push service.
+
+| column          | type      |
+|-----------------|-----------|
+| `user_id`       | uuid PK   |
+| `subscription`  | jsonb     |
+| `updated_at`    | timestamptz |
+
+RLS: strictly private to the owning user.
+
+### `wishes`
+The monthly winner's reward message, one per month per pair.
+
+| column        | type    |
+|---------------|---------|
+| `id`          | uuid PK |
+| `month_start` | date    |
+| `month_end`   | date    |
+| `user_id`     | uuid — the winner who wrote the wish |
+| `partner_id`  | uuid — the recipient |
+| `wish_text`   | text    |
+
+Unique on `(month_start, month_end, user_id)`. RLS insert policy re-derives
+winner status from `monthly_results` server-side, so a client can't insert a
+wish it didn't actually earn.
+
+## Storage
+
+### `avatars` bucket
+Public bucket for profile photos, one file per user at
+`avatars/<user_id>/avatar.<ext>`. Anyone can read; a user can only
+insert/update/delete inside their own `<user_id>/` folder (enforced via
+`storage.foldername(name)` in the RLS policy).
 
 ## Relationship Model
 
@@ -104,13 +142,11 @@ erDiagram
         uuid user_a_id
         uuid user_b_id
     }
-
     DAILY_WATER {
         uuid user_id
         date date
         int water_ml
     }
-
     WEEKLY_RESULTS {
         date week_start
         date week_end
@@ -120,7 +156,6 @@ erDiagram
         int user_b_total
         text winner
     }
-
     MONTHLY_RESULTS {
         date month_start
         date month_end
@@ -130,26 +165,36 @@ erDiagram
         int user_b_wins
         text winner
     }
+    USER_PREFERENCES {
+        uuid user_id
+        boolean daily_reminder
+        boolean partner_reminder
+        text avatar_url
+        text theme
+    }
+    WISHES {
+        date month_start
+        date month_end
+        uuid user_id
+        uuid partner_id
+        text wish_text
+    }
 ```
 
-## Schema Gaps
-- no primary keys visible in repo
-- no foreign keys visible in repo
-- no indexes visible in repo
-- no RLS policies visible in repo
-- no trigger/functions visible in repo
-- no created/updated timestamps visible in repo
+## Security Notes
+- RLS is enabled on every table; see the migration for exact policies.
+- The app uses the public anon key directly from the browser — RLS is the
+  *only* access control layer, so any new query added to the app needs a
+  matching policy or it will silently return no rows.
+- `push_subscriptions` cross-user reads only happen through the Edge
+  Function's service-role client, never from the browser.
 
-## Security Implications
-Because the app uses the public anon key directly in client code, safe operation depends on Supabase-side controls that are not stored in this repository:
-- Row Level Security
-- auth-user-based access restrictions
-- insert/update policy constraints
-
-These cannot be verified from local files.
-
-## Data Integrity Risks In Current Code
-- Today page allows subtraction without floor validation, so negative totals are possible in UI state.
-- Week and month computations rely on local time-derived date ranges.
-- Participant naming is decoupled from database identities and instead based on email prefix heuristics.
-- `participants.ts` exports a hard-coded user ID that is unused and undocumented.
+## Known Constraints
+- This is a fixed two-person app (`src/lib/users.ts` hard-codes the two
+  display names). A third Supabase user can sign up via `/setup-passcode`,
+  but nothing will pair them with anyone — `user_pairs` rows are seeded by
+  hand.
+- Application-level TypeScript row shapes live in `src/lib/types.ts` and are
+  kept in sync with this migration by hand — there's no `supabase gen types
+  typescript` output checked in (would require Supabase CLI access to the
+  live project).

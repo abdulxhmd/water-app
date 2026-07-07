@@ -5,42 +5,60 @@ import Link from "next/link";
 
 import { supabase } from "@/lib/supabase";
 import { useUser } from "@/lib/useUser";
+import {
+  buildWeekDays,
+  endOfLocalDay,
+  formatShortDate,
+  getWeekRange,
+} from "@/lib/date";
+import { getPossessive, getUserNames } from "@/lib/users";
+import { useProfile } from "@/lib/useProfile";
+import { usePartner } from "@/lib/usePartner";
+import UserAvatar from "@/components/UserAvatar";
+import PageFooter from "@/components/PageFooter";
+import type { DailyWaterRow } from "@/lib/types";
+import {
+  getWeeklyResult,
+  getWeeklyWinner,
+  mapWeeklyResultRowToCurrent,
+} from "@/lib/weeklyResult";
 
-type DailyWaterEntry = {
-  user_id: string;
-  date: string;
-  water_ml: number;
-};
+type DailyWaterEntry = DailyWaterRow;
 
-type WeeklyResult = {
-  week_start: string;
-  week_end: string;
-  user_a_id: string;
-  user_b_id: string;
-  user_a_total: number | null;
-  user_b_total: number | null;
-  winner: string | null;
-};
+const DAILY_GOAL_ML = 4000;
+
+function getDaysAtGoalLabel(days: { water: number }[]) {
+  const daysAtGoal = days.filter((day) => day.water >= DAILY_GOAL_ML).length;
+  if (daysAtGoal === days.length) {
+    return "Perfect week!";
+  }
+  if (daysAtGoal === 0) {
+    return "Keep going";
+  }
+  return `${daysAtGoal}/${days.length} days at goal`;
+}
 
 export default function WeekPage() {
   const [weekEntries, setWeekEntries] = useState<DailyWaterEntry[]>([]);
   const [partnerWeekEntries, setPartnerWeekEntries] = useState<DailyWaterEntry[]>([]);
+  const [isLoadingWeek, setIsLoadingWeek] = useState(true);
   const [weeklyTotals, setWeeklyTotals] = useState<{
     userA: number;
     userB: number;
   } | null>(null);
   const [weeklyWinnerState, setWeeklyWinnerState] = useState<string>("");
-  const [partnerId, setPartnerId] = useState<string | null>(null);
+  const [resultSaveError, setResultSaveError] = useState<string | null>(null);
   const { user, loading } = useUser();
   const userId = user?.id ?? null;
+  const { partnerId, isLoaded: isPartnerLoaded } = usePartner(userId, loading);
   const USER_A = userId ?? "";
   const USER_B = partnerId ?? "";
   const { currentName, partnerName } = getUserNames(user?.email);
+  const avatarUrl = useProfile(userId);
+  const partnerAvatarUrl = useProfile(partnerId);
 
   const { startDate, endDate } = getWeekRange(new Date());
-  const endOfWeek = new Date(endDate);
-  endOfWeek.setHours(23, 59, 59, 999);
-  const isWeekLocked = new Date() > endOfWeek;
+  const isWeekLocked = new Date() > endOfLocalDay(endDate);
 
   const currentWeekTotal = weekEntries.reduce((sum, entry) => sum + entry.water_ml, 0);
   const partnerWeekTotal = partnerWeekEntries.reduce((sum, entry) => sum + entry.water_ml, 0);
@@ -59,42 +77,12 @@ export default function WeekPage() {
   const weekHeading = `Week of ${weekDateLabel}`;
 
   useEffect(() => {
-    if (loading || !userId) {
-      return;
-    }
-
-    const loadPair = async () => {
-      const { data, error } = await supabase
-        .from("user_pairs")
-        .select("user_a_id, user_b_id")
-        .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Error loading user pair:", error);
-        return;
-      }
-
-      if (!data) {
-        setPartnerId(null);
-        return;
-      }
-
-      const nextPartnerId = data.user_a_id === userId
-        ? data.user_b_id
-        : data.user_a_id;
-      setPartnerId(nextPartnerId);
-    };
-
-    loadPair();
-  }, [loading, userId]);
-
-  useEffect(() => {
-    if (loading || !userId) {
+    if (loading || !userId || !isPartnerLoaded) {
       return;
     }
 
     const loadWeekEntries = async () => {
+      setIsLoadingWeek(true);
       const query = supabase
         .from("daily_water")
         .select("user_id, date, water_ml")
@@ -110,16 +98,18 @@ export default function WeekPage() {
 
       if (error) {
         console.error("Error loading weekly water:", error);
+        setIsLoadingWeek(false);
         return;
       }
 
       const entries = data ?? [];
       setWeekEntries(entries.filter((entry) => entry.user_id === userId));
       setPartnerWeekEntries(entries.filter((entry) => entry.user_id === partnerId));
+      setIsLoadingWeek(false);
     };
 
     loadWeekEntries();
-  }, [loading, partnerId, startDate, endDate, userId]);
+  }, [loading, partnerId, isPartnerLoaded, startDate, endDate, userId]);
 
   const weekDays = buildWeekDays(startDate, weekEntries);
   const partnerWeekDays = buildWeekDays(startDate, partnerWeekEntries);
@@ -132,9 +122,15 @@ export default function WeekPage() {
     effectiveWeeklyTotals.userB > effectiveWeeklyTotals.userA
       ? "Partner is ahead"
       : "Keep going, you're close";
+  const isCurrentUserLeading =
+    effectiveWeeklyTotals.userA > effectiveWeeklyTotals.userB;
+  const isPartnerLeading =
+    effectiveWeeklyTotals.userB > effectiveWeeklyTotals.userA;
+  const currentDaysAtGoalLabel = getDaysAtGoalLabel(weekDays);
+  const partnerDaysAtGoalLabel = getDaysAtGoalLabel(partnerWeekDays);
 
   useEffect(() => {
-    if (!isWeekLocked || loading || !user || !partnerId) {
+    if (!isWeekLocked || loading || !userId || !partnerId) {
       return;
     }
 
@@ -190,7 +186,7 @@ export default function WeekPage() {
 
       if (insertError) {
         console.error("Error saving weekly result:", insertError);
-        alert("Something went wrong saving data");
+        setResultSaveError("Could not save this week's result. It will retry next visit.");
         return;
       }
 
@@ -236,35 +232,11 @@ export default function WeekPage() {
           >
             Settings
           </Link>
-          <div className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-white shadow-sm dark:border-[#dbe6f2] sm:h-10 sm:w-10">
-            <img
-              alt="User profile avatar"
-              className="h-full w-full object-cover"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBP60wc5__59JcCKoCBN6laMSj7hjBCFojEE-MMdD5GxSHqFGTOwA-9kZW5-nKUo4g23NbyDBtz1HI1MQx3gWpaTEopoXajDEtfbIw8LvDvyJdTHpxvCASMdetqIg6qA_n5p3akG7eyrTOqNM2U15njQlP1cA3v2CvQze-bFOO2lB-w1ealODDirVJIE549PS_WKOi1uYgrjYEAcrtDI2EpPlYMZk-B6xMVdHgPVWCtF_moGiEmyyRUf8auQAEtVdwBe_EPn1T3cDI"
-            />
-          </div>
+          <UserAvatar avatarUrl={avatarUrl} name={currentName} />
         </div>
       </header>
 
       <main className="relative flex min-h-[calc(100vh-72px)] flex-col items-center justify-start overflow-hidden px-4 py-8 lg:py-12">
-        <input
-          id="lock-toggle"
-          type="checkbox"
-          className="peer hidden"
-          disabled={isWeekLocked}
-        />
-        <label
-          htmlFor="lock-toggle"
-          className={`fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-[#E3E8F5] bg-white px-4 py-2 text-xs font-semibold shadow-lg transition-colors dark:border-[#dbe6f2] dark:bg-[#eef7ff] ${
-            isWeekLocked
-              ? "cursor-not-allowed opacity-60"
-              : "hover:bg-[#EEF7F1] dark:hover:bg-[#e1f0ff]"
-          }`}
-        >
-          <span className="material-symbols-outlined text-sm">lock_open</span>
-          {isWeekLocked ? "Week Locked" : "Toggle Lock View"}
-        </label>
-
         <div className="w-full max-w-[960px] space-y-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div className="flex flex-col gap-2">
@@ -280,12 +252,9 @@ export default function WeekPage() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                disabled={isWeekLocked}
-                className={`flex h-10 w-10 items-center justify-center rounded-full border border-[#E3E8F5] bg-white text-slate-500 shadow-sm transition-colors dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-600 ${
-                  isWeekLocked
-                    ? "cursor-not-allowed opacity-60"
-                    : "hover:border-[#7FB8FF] hover:text-[#7FB8FF]"
-                }`}
+                disabled
+                title="Browsing previous weeks isn't available yet"
+                className="flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border border-[#E3E8F5] bg-white text-slate-500 opacity-60 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-600"
               >
                 <span className="material-symbols-outlined">chevron_left</span>
               </button>
@@ -293,10 +262,9 @@ export default function WeekPage() {
                 {weekDateLabel}
               </span>
               <button
-                disabled={isWeekLocked}
-                className={`flex h-10 w-10 items-center justify-center rounded-full border border-[#E3E8F5] bg-white text-slate-500 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-600 ${
-                  isWeekLocked ? "cursor-not-allowed opacity-60" : "opacity-50"
-                }`}
+                disabled
+                title="Browsing future weeks isn't available yet"
+                className="flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border border-[#E3E8F5] bg-white text-slate-500 opacity-60 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-600"
               >
                 <span className="material-symbols-outlined">chevron_right</span>
               </button>
@@ -305,33 +273,39 @@ export default function WeekPage() {
 
           {isWeekLocked ? (
             <div className="rounded-xl border border-[#E3E8F5] bg-white/80 px-4 py-3 text-center text-sm text-slate-500 shadow-sm">
-              This week's results are locked. Changes are no longer allowed.
+              This week&apos;s results are locked. Changes are no longer allowed.
+            </div>
+          ) : null}
+
+          {isPartnerLoaded && !partnerId ? (
+            <div className="rounded-xl border border-[#E3E8F5] bg-white/80 px-4 py-3 text-center text-sm text-slate-500 shadow-sm">
+              No partner is paired with your account yet, so only your own
+              totals are shown below.
             </div>
           ) : null}
 
           <div className="flex flex-col items-center justify-between gap-4 rounded-xl border border-[#7FB8FF]/20 bg-gradient-to-r from-[#7FB8FF]/10 to-transparent p-6 text-center md:flex-row md:text-left">
             <div>
               <h2 className="mb-1 text-xl font-semibold text-slate-800 dark:text-slate-800 md:text-2xl">
-                You both did wonderful this week.
+                {isWeekLocked
+                  ? weeklyResult || "This week's results are in."
+                  : "This week is still in progress."}
               </h2>
               <p className="text-slate-500 dark:text-slate-600">
                 Staying hydrated together keeps the bond strong.
               </p>
             </div>
             <div className="flex items-center -space-x-3">
-              <img
-                alt={`${currentName} profile`}
-                className="h-10 w-10 rounded-full border-2 border-white object-cover dark:border-[#232d33]"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuC3rbduhf7LFgOC2qEtCxt1lUrgFA7lWOtWGro_3zvinOs8ZLf3XwPa2zgNmh9oXve9IbWVCgX9RuDy01H5cvVjSomQI164GC0khFKFAQn7QIZas1RQ62eYbqnMfY16Z2bF8sR8KE4OhqNZxWZuIt2TFbsYfHWfItcQDG1X8PzwdyYuboIUtPXL2P7Ko-6YMPXntV9ftzeYkjfYu7ypThJtWr_AChCGWqOv93o9GD-4eCbmweR_r7Ko3NaBRsB8zzmvdSGEmkUS07Q"
+              <UserAvatar
+                avatarUrl={avatarUrl}
+                name={currentName}
+                sizeClassName="h-10 w-10"
               />
-              <img
-                alt={`${partnerName} profile`}
-                className="h-10 w-10 rounded-full border-2 border-white object-cover dark:border-[#232d33]"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDUoGlEYqSzxpfW-Juba-VT5pTgyFikYASlg9RKoVXVPdbhi25DYThFHMLsstztE-CiJKupYoxNGr_W_keRxoHiVW5M1J-qZ9uggHaZsYvUIEYPGSxqiSIawhsTeaDYFHzg4Nes5LOsngJDydyLXz9RxEv7DN36E7vtLv4LPLMxHPjgJmiKWdSKLv8W01glMh0FD-t9oqbAPBfTs3wInBwa3hzRkdgtUnzzCl9axSzmgjmIm4yi2d47wREpxcu5xOmjgJ55lIj7iNA"
+              <UserAvatar
+                avatarUrl={partnerAvatarUrl}
+                name={partnerName}
+                sizeClassName="h-10 w-10"
               />
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-emerald-100 text-emerald-600 dark:border-[#232d33] dark:bg-emerald-900 dark:text-emerald-300">
-                <span className="material-symbols-outlined text-lg">check</span>
-              </div>
             </div>
           </div>
 
@@ -339,6 +313,9 @@ export default function WeekPage() {
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-600">
               This Week
             </h3>
+            {isLoadingWeek ? (
+              <p className="mt-4 text-sm text-slate-500">Loading this week&apos;s data…</p>
+            ) : (
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {weekDays.map((day) => (
                 <div
@@ -352,13 +329,14 @@ export default function WeekPage() {
                 </div>
               ))}
             </div>
+            )}
             <div className="mt-4 text-xs font-medium text-slate-500">
               {isWeekLocked ? (
                 <span className="inline-flex items-center gap-2 rounded-full border border-[#E3E8F5] bg-white/80 px-3 py-1">
                   <span className="material-symbols-outlined text-sm text-slate-400">
                     lock
                   </span>
-                  This week's results are locked
+                  This week&apos;s results are locked
                 </span>
               ) : (
                 <span>This week is still in progress</span>
@@ -398,6 +376,12 @@ export default function WeekPage() {
             </div>
           )}
 
+          {resultSaveError ? (
+            <p className="text-center text-xs font-medium text-rose-500">
+              {resultSaveError}
+            </p>
+          ) : null}
+
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div className="group relative overflow-hidden rounded-xl border border-[#E3E8F5] bg-white p-6 shadow-sm transition-colors hover:border-[#7FB8FF]/30 dark:border-[#dbe6f2] dark:bg-[#eef7ff]">
               <div className="absolute right-0 top-0 p-4 opacity-10 transition-opacity group-hover:opacity-20">
@@ -407,28 +391,25 @@ export default function WeekPage() {
               </div>
               <BlurWrapper isLocked={isWeekLocked}>
                 <div className="relative z-10 mb-6 flex items-center gap-4">
-                  <img
-                    alt={`${currentName} profile picture`}
-                    className="h-14 w-14 rounded-full border-2 border-[#7FB8FF] object-cover shadow-lg shadow-[#7FB8FF]/20"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuD2ZoAPdqaCZ6eNqMTsH01QcRZdbTFUdeQtX9ZNTl-GQRAlE7btH-UZjRCYMSh3ZD2LYKnGGb5XEdkS1itNBiyj7dzmco2W13FrjXjImikGlrhJaAMIiDR9u-D75P1adCnzf4lwfHj9atl5Rpz9_RPdjEFa5Cqwkmfip4FIYoABIZrxxppjH4P08g_11R4w6OSwa8EroGjfi2Lmi0pjgUBMcF-cnQB2libE3fX5IkjME3pqW6kgPoNzsVgaQ4Xl-W7-0F_1dkS16Fo"
+                  <UserAvatar
+                    avatarUrl={avatarUrl}
+                    name={currentName}
+                    sizeClassName="h-14 w-14"
+                    borderClassName="border-2 border-[#7FB8FF] shadow-lg shadow-[#7FB8FF]/20"
                   />
                   <div>
-                    <h3 className="text-lg font-bold">{currentName}&apos;s Total</h3>
-                    <div className="w-fit rounded-full bg-emerald-50 px-2 py-0.5 text-sm font-medium text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400">
-                      <span className="material-symbols-outlined text-sm">
-                        trending_up
+                    <h3 className="text-lg font-bold">{getPossessive(currentName)} Total</h3>
+                  </div>
+                  {isCurrentUserLeading ? (
+                    <div className="ml-auto">
+                      <span
+                        className="material-symbols-outlined text-3xl text-yellow-500 drop-shadow-sm"
+                        title="Highest Intake"
+                      >
+                        emoji_events
                       </span>
-                      +5% vs last week
                     </div>
-                  </div>
-                  <div className="ml-auto">
-                    <span
-                      className="material-symbols-outlined text-3xl text-yellow-500 drop-shadow-sm"
-                      title="Highest Intake"
-                    >
-                      emoji_events
-                    </span>
-                  </div>
+                  ) : null}
                 </div>
                 <div className="relative z-10 mb-6 flex flex-col gap-1">
                   <span className="text-5xl font-semibold tracking-tight text-slate-800 dark:text-slate-800">
@@ -456,20 +437,25 @@ export default function WeekPage() {
               </div>
               <BlurWrapper isLocked={isWeekLocked}>
                 <div className="relative z-10 mb-6 flex items-center gap-4">
-                  <img
-                    alt={`${partnerName} profile picture`}
-                    className="h-14 w-14 rounded-full border-2 border-[#E3E8F5] object-cover dark:border-[#dbe6f2]"
-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuB7qGWGk2RfduNan97hfoKUK1waAW6rernRvM514DgDJ13hDl4i6Xg56Zv--jfJcP2HmXtcXrfJ4JZ_491WHvK5dAODyFaA-bFRi4itl8pUnB1c7LYvddwhjfzEhRF1Bv1gMAaLbfkR7CEh9HjDUxWucXXonG__wynqDdfoPPdUZWGPI2vdlR8XSqbSe9_iBRdqzS5App2EO5MQiz6CdHo6Dopt1x5ts1M7UF7Ao67-SQyD1AUgfCIsaFIcOLM8o1HKUiqwde6bknU"
+                  <UserAvatar
+                    avatarUrl={partnerAvatarUrl}
+                    name={partnerName}
+                    sizeClassName="h-14 w-14"
+                    borderClassName="border-2 border-[#E3E8F5] dark:border-[#dbe6f2]"
                   />
                   <div>
-                    <h3 className="text-lg font-bold">{partnerName}&apos;s Total</h3>
-                    <div className="w-fit rounded-full bg-rose-50 px-2 py-0.5 text-sm font-medium text-rose-500 dark:bg-rose-900/20 dark:text-rose-400">
-                      <span className="material-symbols-outlined text-sm">
-                        trending_down
-                      </span>
-                      -2% vs last week
-                    </div>
+                    <h3 className="text-lg font-bold">{getPossessive(partnerName)} Total</h3>
                   </div>
+                  {isPartnerLeading ? (
+                    <div className="ml-auto">
+                      <span
+                        className="material-symbols-outlined text-3xl text-yellow-500 drop-shadow-sm"
+                        title="Highest Intake"
+                      >
+                        emoji_events
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="relative z-10 mb-6 flex flex-col gap-1">
                   <span className="text-5xl font-semibold tracking-tight text-slate-800 dark:text-slate-800">
@@ -495,15 +481,15 @@ export default function WeekPage() {
               <div className="flex flex-1 flex-col gap-4">
                 <div className="flex items-baseline justify-between">
                   <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-600">
-                    {currentName}&apos;s Intake
+                    {getPossessive(currentName)} Intake
                   </h4>
                   <span className="rounded bg-[#7FB8FF]/10 px-2 py-1 text-xs font-medium text-[#7FB8FF]">
-                    Perfect Week!
+                    {currentDaysAtGoalLabel}
                   </span>
                 </div>
                 <div className="grid h-32 grid-cols-7 items-end gap-2 md:gap-4">
                 {weekDays.map((day) => {
-                  const height = Math.min(100, Math.round((day.water / 4000) * 100));
+                  const height = Math.min(100, Math.round((day.water / DAILY_GOAL_ML) * 100));
                   return (
                     <div key={day.date} className="group flex h-full flex-col items-center justify-end gap-2">
                       <div
@@ -523,15 +509,15 @@ export default function WeekPage() {
               <div className="flex flex-1 flex-col gap-4">
                 <div className="flex items-baseline justify-between">
                   <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-600">
-                    {partnerName}&apos;s Intake
+                    {getPossessive(partnerName)} Intake
                   </h4>
                   <span className="rounded bg-[#EEF7F1] px-2 py-1 text-xs font-medium text-slate-500 dark:bg-[#f4f3ff] dark:text-slate-600">
-                    Keep it up!
+                    {partnerDaysAtGoalLabel}
                   </span>
                 </div>
                 <div className="grid h-32 grid-cols-7 items-end gap-2 md:gap-4">
                   {partnerWeekDays.map((day) => {
-                    const height = Math.min(100, Math.round((day.water / 4000) * 100));
+                    const height = Math.min(100, Math.round((day.water / DAILY_GOAL_ML) * 100));
                     return (
                       <div key={day.date} className="group flex h-full flex-col items-center justify-end gap-2">
                         <div
@@ -556,184 +542,11 @@ export default function WeekPage() {
             Weekly total: {weeklyTotal} ml
           </div>
         </div>
-
-        <div className="pointer-events-none invisible absolute inset-0 z-20 flex items-center justify-center bg-white/30 p-6 opacity-0 transition-opacity duration-500 peer-checked:pointer-events-auto peer-checked:visible peer-checked:opacity-100 dark:bg-[#e6f0ff]/60">
-          <div className="flex w-full max-w-md flex-col items-center gap-6 rounded-2xl border border-[#E3E8F5] bg-white p-8 text-center shadow-2xl dark:border-[#dbe6f2] dark:bg-[#eef7ff] md:p-12">
-            <div className="mb-2 flex h-20 w-20 items-center justify-center rounded-full bg-[#7FB8FF]/10 text-[#7FB8FF]">
-              <span className="material-symbols-outlined text-4xl">lock</span>
-            </div>
-            <h2 className="text-2xl font-semibold text-slate-800 dark:text-slate-800">
-              Results Locked
-            </h2>
-            <p className="leading-relaxed text-slate-500 dark:text-slate-600">
-              This week&apos;s results are still brewing. Keep drinking water and
-              check back Sunday night for the big reveal!
-            </p>
-            <div className="mt-2 flex h-10 w-full items-center justify-center rounded-lg border border-[#E3E8F5] bg-[#EEF7F1] text-sm font-medium text-slate-500 dark:border-[#dbe6f2] dark:bg-[#f4f3ff] dark:text-slate-600">
-              Unlocks Sunday at 8:00 PM
-            </div>
-          </div>
-        </div>
       </main>
 
-      <footer className="mt-auto border-t border-[#E3E8F5] bg-white/70 px-4 py-6 text-xs text-slate-500 backdrop-blur-md dark:border-[#dbe6f2] dark:bg-[#eef7ff]/70 dark:text-slate-600 sm:px-6 lg:px-10">
-        <div className="mx-auto flex max-w-4xl flex-col items-center gap-3 sm:flex-row sm:justify-between">
-          <p>Hydration, shared.</p>
-          <div className="flex gap-4">
-            <a className="transition-colors hover:text-[#7FB8FF]" href="#">
-              Privacy
-            </a>
-            <a className="transition-colors hover:text-[#7FB8FF]" href="#">
-              Terms
-            </a>
-            <a className="transition-colors hover:text-[#7FB8FF]" href="#">
-              Help
-            </a>
-          </div>
-        </div>
-      </footer>
+      <PageFooter />
     </div>
   );
-}
-
-function getWeekRange(date: Date) {
-  const current = new Date(date);
-  current.setHours(0, 0, 0, 0);
-
-  const dayIndex = current.getDay();
-  const daysFromMonday = (dayIndex + 6) % 7;
-
-  const start = new Date(current);
-  start.setDate(current.getDate() - daysFromMonday);
-
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-
-  return {
-    startDate: formatLocalDate(start),
-    endDate: formatLocalDate(end),
-  };
-}
-
-function formatLocalDate(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-function buildWeekDays(startDate: string, entries: DailyWaterEntry[]) {
-  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const byDate = new Map(entries.map((entry) => [entry.date, entry.water_ml]));
-  const start = new Date(startDate);
-
-  return labels.map((label, index) => {
-    const current = new Date(start);
-    current.setDate(start.getDate() + index);
-    const dateKey = current.toISOString().slice(0, 10);
-
-    return {
-      label,
-      date: dateKey,
-      water: byDate.get(dateKey) ?? 0,
-    };
-  });
-}
-
-function getWeeklyWinner(
-  totals: { userA: number; userB: number } | null,
-  userAId: string,
-  userBId: string
-) {
-  if (!totals) {
-    return "";
-  }
-  if (totals.userA > totals.userB) {
-    return userAId;
-  }
-  if (totals.userB > totals.userA) {
-    return userBId;
-  }
-  return "tie";
-}
-
-function getWeeklyResult(
-  winner: string,
-  userAId: string,
-  userBId: string,
-  userAName: string,
-  userBName: string
-) {
-  if (!winner) {
-    return "";
-  }
-  if (winner === "tie") {
-    return "It's a tie";
-  }
-  if (winner === userAId) {
-    return `Winner: ${userAName}`;
-  }
-  if (winner === userBId) {
-    return `Winner: ${userBName}`;
-  }
-  return "Winner: TBD";
-}
-
-type WeeklyResultPartialRow = {
-  user_a_id: string;
-  user_b_id: string;
-  user_a_total: number | null;
-  user_b_total: number | null;
-  winner: string | null;
-};
-
-function mapWeeklyResultRowToCurrent(
-  row: WeeklyResultPartialRow,
-  currentUserId: string,
-  partnerId: string
-) {
-  if (row.user_a_id === currentUserId && row.user_b_id === partnerId) {
-    return {
-      userATotal: row.user_a_total ?? 0,
-      userBTotal: row.user_b_total ?? 0,
-      winner: row.winner ?? "",
-    };
-  }
-
-  if (row.user_a_id === partnerId && row.user_b_id === currentUserId) {
-    return {
-      userATotal: row.user_b_total ?? 0,
-      userBTotal: row.user_a_total ?? 0,
-      winner: row.winner ?? "",
-    };
-  }
-
-  return null;
-}
-
-function formatShortDate(dateString: string) {
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function getUserNames(email?: string | null) {
-  const normalized = email?.split("@")[0]?.toLowerCase() ?? "";
-  const userAName = "Shahul";
-  const userBName = "Shaima";
-
-  if (normalized === userBName.toLowerCase()) {
-    return { currentName: userBName, partnerName: userAName };
-  }
-
-  if (normalized === userAName.toLowerCase()) {
-    return { currentName: userAName, partnerName: userBName };
-  }
-
-  return { currentName: "You", partnerName: "Partner" };
 }
 
 function BlurWrapper({ isLocked, children }: BlurWrapperProps) {

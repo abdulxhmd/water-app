@@ -1,9 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
+import { buildCredentials, isValidPin } from "@/lib/credentials";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,17 +20,14 @@ export default function LoginPage() {
       return;
     }
 
-    const normalizedName = name.trim().toLowerCase();
-    const pin = pinDigits.join("");
-    if (!normalizedName || pin.length !== 4 || pinDigits.some((d) => !d)) {
-      alert("Enter your name and 4-digit pin to continue");
+    if (!name.trim() || !isValidPin(pinDigits)) {
+      setErrorMessage("Enter your name and 4-digit pin to continue.");
       return;
     }
 
     setIsSubmitting(true);
     setErrorMessage(null);
-    const email = `${normalizedName}@water.app`;
-    const password = `water-${pin}-lock`;
+    const { email, password } = buildCredentials(name, pinDigits.join(""));
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -147,12 +146,12 @@ export default function LoginPage() {
           </div>
 
           <div className="pt-2 text-center">
-            <a
+            <Link
+              href="/setup-passcode"
               className="text-xs text-slate-500/70 underline decoration-dotted underline-offset-4 transition-colors duration-200 hover:text-[#7FB8FF] dark:text-slate-500/70"
-              href="#"
             >
-              I forgot my key
-            </a>
+              First time? Set up your passcode
+            </Link>
           </div>
         </div>
 
