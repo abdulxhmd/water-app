@@ -48,7 +48,9 @@ export default function TodayPage() {
   // having opted into `partner_reminder` in their own settings.
   const { partnerId } = usePartner(userId, loading);
   const [partnerAllowsReminders, setPartnerAllowsReminders] = useState(false);
-  const [reminderSentStatus, setReminderSentStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [reminderSentStatus, setReminderSentStatus] = useState<
+    "idle" | "sending" | "sent" | "no_subscription" | "error"
+  >("idle");
 
   // Derived display values.
   const fillPercent = Math.min(100, Math.round((water / goal) * 100));
@@ -246,7 +248,15 @@ export default function TodayPage() {
       },
     });
 
-    setReminderSentStatus(error ? "error" : "sent");
+    if (error) {
+      // 404 = the partner has no active push subscription on any device —
+      // retrying can't help; they need to enable notifications on their end.
+      const status = (error as { context?: { status?: number } }).context?.status;
+      setReminderSentStatus(status === 404 ? "no_subscription" : "error");
+      return;
+    }
+
+    setReminderSentStatus("sent");
   };
 
   return (
@@ -455,6 +465,12 @@ export default function TodayPage() {
           {reminderSentStatus === "error" ? (
             <p className="text-xs font-medium text-rose-500">
               Could not send the reminder. Please try again.
+            </p>
+          ) : null}
+          {reminderSentStatus === "no_subscription" ? (
+            <p className="max-w-xs text-center text-xs font-medium text-amber-600">
+              {partnerName} hasn&apos;t enabled notifications on their device yet — the
+              reminder can&apos;t be delivered until they allow them in Settings.
             </p>
           ) : null}
 

@@ -22,7 +22,10 @@ Deno.serve(async (req) => {
     url,
   });
 
-  if (result === "no_subscription") {
+  // "expired" means the push service rejected the stored subscription and it
+  // has been deleted — from the sender's perspective that's the same as the
+  // target having no subscription, not a success.
+  if (result === "no_subscription" || result === "expired") {
     return new Response("No subscription found for user", { status: 404 });
   }
   if (result === "error") {
