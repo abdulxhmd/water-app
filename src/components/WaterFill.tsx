@@ -3,6 +3,8 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import {
+  AMBIENT_RIPPLE_FORCE,
+  AMBIENT_RIPPLE_INTERVAL,
   IDLE_WAVE_AMPLITUDE,
   IDLE_WAVE_SPEED,
   LEVEL_EASE,
@@ -25,8 +27,8 @@ type WaterFillProps = {
 
 const CARD_RADIUS = 24; // matches rounded-3xl
 const FIXED_STEP_MS = 1000 / 60;
-const ANGLE_SMOOTHING = 0.1;
-const GRAVITY_DEAD_ZONE = 1.5;
+const ANGLE_SMOOTHING = 0.045;
+const GRAVITY_DEAD_ZONE = 2.2;
 
 export default function WaterFill(props: WaterFillProps) {
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -156,6 +158,12 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
       // Level eases exponentially — smooth rise, no bounce, no fanfare.
       sim.level += (sim.targetLevel - sim.level) * LEVEL_EASE;
 
+      // Every few seconds a small ripple wanders across so the idle surface
+      // reads as liquid rather than a frozen line.
+      if (sim.stepCount % AMBIENT_RIPPLE_INTERVAL === 0) {
+        disturb(sim.surface, Math.random() * (NUM_COLUMNS - 1), (Math.random() - 0.5) * 2 * AMBIENT_RIPPLE_FORCE);
+      }
+
       stepSurface(sim.surface);
     };
 
@@ -246,9 +254,13 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
     const onMotion = (event: DeviceMotionEvent) => {
       const g = event.accelerationIncludingGravity;
       if (!g || g.x == null || g.y == null) return;
-      // Phone flat on a table: gravity is along z, on-screen "down" is
-      // undefined and noisy — hold the last stable angle.
-      if (Math.hypot(g.x, g.y) < GRAVITY_DEAD_ZONE) return;
+      // Phone flat on a table: gravity is along z, so the on-screen "down"
+      // is undefined and pure noise. Ease back to the neutral resting angle
+      // instead of holding a stale tilt (which made a flat phone look tilted).
+      if (Math.hypot(g.x, g.y) < GRAVITY_DEAD_ZONE) {
+        sim.targetAngle = 0;
+        return;
+      }
       let angle = Math.atan2(g.x, g.y) * (180 / Math.PI);
       if (typeof screen !== "undefined" && screen.orientation) {
         angle -= screen.orientation.angle;
@@ -270,7 +282,12 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
     const disturbAt = (world: { x: number; y: number }, force: number) => {
       // Only react near or below the surface — poking the air shouldn't ripple.
       if (world.y < surfaceYAt(world.x) - 40) return;
-      disturb(sim.surface, columnOf(world.x), force);
+      // Spread the impulse over neighboring columns so it makes a real wave
+      // rather than a single-column blip.
+      const col = columnOf(world.x);
+      disturb(sim.surface, col, force);
+      disturb(sim.surface, col - 1, force * 0.5);
+      disturb(sim.surface, col + 1, force * 0.5);
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -285,7 +302,7 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
         event.clientY - sim.lastPointer.y
       );
       sim.lastPointer = { x: event.clientX, y: event.clientY };
-      disturbAt(pointerToWorld(event), Math.min(1, speed * 0.05) * TOUCH_FORCE * 0.4);
+      disturbAt(pointerToWorld(event), Math.min(1.5, speed * 0.09) * TOUCH_FORCE * 0.6);
     };
     const onPointerEnd = () => {
       sim.pointerActive = false;

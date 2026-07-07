@@ -20,13 +20,17 @@ export const SPREAD_PASSES = 2;
 
 // --- Feel tuning ------------------------------------------------------------
 /** Velocity kick for a tap; drags scale with pointer speed. */
-export const TOUCH_FORCE = 1.4;
+export const TOUCH_FORCE = 3.2;
 /** How strongly a change in device angle sloshes the surface. */
 export const TILT_SLOSH = 0.2;
-/** Peak size (px) of the barely-there idle swell. Purely visual. */
-export const IDLE_WAVE_AMPLITUDE = 1.5;
+/** Peak size (px) of the idle swell. Purely visual. */
+export const IDLE_WAVE_AMPLITUDE = 2.8;
 /** Idle swell speed (radians/second). */
-export const IDLE_WAVE_SPEED = 0.9;
+export const IDLE_WAVE_SPEED = 1.3;
+/** Size of the occasional wandering idle ripple. */
+export const AMBIENT_RIPPLE_FORCE = 0.4;
+/** Steps between idle ripples (~60 steps = 1s). */
+export const AMBIENT_RIPPLE_INTERVAL = 200;
 /** Exponential ease applied to level changes per step. Higher = faster rise. */
 export const LEVEL_EASE = 0.05;
 
