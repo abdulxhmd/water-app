@@ -10,8 +10,10 @@ import { useProfile } from "@/lib/useProfile";
 import { usePartner } from "@/lib/usePartner";
 import { clampWater, MAX_SINGLE_ENTRY_ML } from "@/lib/water";
 import { getRandomHydrationMessage } from "@/lib/hydrationMessages";
+import { useDeviceTilt } from "@/lib/useDeviceTilt";
 import UserAvatar from "@/components/UserAvatar";
 import PageFooter from "@/components/PageFooter";
+import WaterFill from "@/components/WaterFill";
 
 export default function TodayPage() {
   // Core state for today.
@@ -49,6 +51,7 @@ export default function TodayPage() {
   // Derived display values.
   const fillPercent = Math.min(100, Math.round((water / goal) * 100));
   const hydrationLabel = getHydrationLabel(fillPercent);
+  const { tilt, supported: tiltSupported, permission: tiltPermission, enableTilt } = useDeviceTilt();
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -239,13 +242,13 @@ export default function TodayPage() {
   return (
     <div className="relative flex min-h-screen w-full flex-col overflow-hidden bg-[#F7FAFF] text-slate-800 transition-colors duration-200 dark:bg-gradient-to-br dark:from-[#f3ecff] dark:via-[#e8f5ff] dark:to-[#e8fff1] dark:text-slate-800">
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-70">
-        <div className="absolute left-[-10%] top-[-20%] h-[60%] w-[60%] rounded-full bg-[#E9E2FF]/35 blur-[120px] dark:bg-[#7FB8FF]/10" />
-        <div className="absolute bottom-[-20%] right-[-10%] h-[60%] w-[60%] rounded-full bg-[#7FB8FF]/10 blur-[140px]" />
+        <div className="absolute left-[-10%] top-[-20%] h-[60%] w-[60%] rounded-full bg-[#E9E2FF]/35 blur-[120px] dark:bg-brand/10" />
+        <div className="absolute bottom-[-20%] right-[-10%] h-[60%] w-[60%] rounded-full bg-brand/10 blur-[140px]" />
       </div>
 
       <header className="relative z-10 flex items-center justify-between border-b border-[#E3E8F5] bg-white/80 px-4 py-4 backdrop-blur-md dark:border-[#dbe6f2] dark:bg-[#eef7ff]/80 sm:px-6 md:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#7FB8FF]/10 text-[#7FB8FF]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
             <span className="material-symbols-outlined text-[22px]">
               water_drop
             </span>
@@ -276,17 +279,23 @@ export default function TodayPage() {
             {formatDateTime(now)}
           </p>
           <p className="text-2xl font-light text-slate-800 dark:text-slate-800 md:text-3xl">
-            Good morning, {greetingName}.
+            {getGreeting(now)}, {greetingName}.
           </p>
         </div>
 
         <div className="relative mb-10 flex h-[260px] w-[260px] items-center justify-center sm:h-[320px] sm:w-[320px] md:h-[400px] md:w-[400px]">
-          <div className="absolute inset-0 flex items-end overflow-hidden rounded-3xl border border-[#E3E8F5] bg-white/70">
-            <div
-              className="w-full bg-[#7FB8FF]/25 transition-[height] duration-700 ease-in-out"
-              style={{ height: `${fillPercent}%` }}
-            />
-          </div>
+          <WaterFill fillPercent={fillPercent} tilt={tilt} />
+
+          {tiltSupported && tiltPermission !== "granted" && tiltPermission !== "unnecessary" ? (
+            <button
+              onClick={enableTilt}
+              className="absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-slate-500 shadow-sm transition-colors hover:text-brand"
+              aria-label="Enable tilt animation"
+              title="Enable tilt animation"
+            >
+              <span className="material-symbols-outlined text-[18px]">screen_rotation</span>
+            </button>
+          ) : null}
 
           <div className={`z-10 flex flex-col items-center text-center ${isLoadingToday ? "animate-pulse opacity-60" : ""}`}>
             <span className="text-6xl font-bold tracking-tighter text-slate-800 dark:text-slate-800 md:text-7xl">
@@ -298,7 +307,7 @@ export default function TodayPage() {
             <span className="mt-1 text-lg font-medium text-slate-500 dark:text-slate-500">
               / {goal.toLocaleString()} ml
             </span>
-            <div className="mt-4 rounded-full border border-white/20 bg-white/70 px-4 py-1.5 text-sm font-medium text-[#7FB8FF] backdrop-blur-sm dark:bg-white/80">
+            <div className="mt-4 rounded-full border border-white/20 bg-white/70 px-4 py-1.5 text-sm font-medium text-brand backdrop-blur-sm dark:bg-white/80">
               {isLoadingToday ? "Fetching today's total" : hydrationLabel}
             </div>
           </div>
@@ -307,7 +316,7 @@ export default function TodayPage() {
         <div className="z-20 flex w-full max-w-md flex-col items-center gap-6">
           {!showCustomInput ? (
             <div className="group relative">
-              <div className="absolute -inset-1 rounded-full bg-[#7FB8FF]/30 blur opacity-40 transition duration-200 group-hover:opacity-75" />
+              <div className="absolute -inset-1 rounded-full bg-brand/30 blur opacity-40 transition duration-200 group-hover:opacity-75" />
               <button
                 onClick={() => {
                   setShowCustomInput(true);
@@ -346,7 +355,7 @@ export default function TodayPage() {
                 </button>
                 <button
                   onClick={handleAddCustom}
-                  className="flex h-12 w-12 items-center justify-center rounded-full border border-[#E3E8F5] bg-white/80 text-[#7FB8FF] shadow-sm transition-all hover:scale-105 active:scale-95"
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-[#E3E8F5] bg-white/80 text-brand shadow-sm transition-all hover:scale-105 active:scale-95"
                 >
                   <span className="material-symbols-outlined text-[24px]">add</span>
                 </button>
@@ -402,7 +411,7 @@ export default function TodayPage() {
               <button
                 type="button"
                 onClick={() => setShowYesterdayEditor(true)}
-                className="text-xs font-medium text-slate-500 underline transition-colors hover:text-[#7FB8FF]"
+                className="text-xs font-medium text-slate-500 underline transition-colors hover:text-brand"
               >
                 Forgot to log yesterday?
               </button>
@@ -474,8 +483,8 @@ export default function TodayPage() {
 
         <div className="sticky bottom-4 mt-10 flex w-full max-w-lg justify-center px-2 sm:px-0">
           <div className="flex w-full items-center gap-4 rounded-2xl border border-[#E3E8F5] bg-white/80 p-4 shadow-lg backdrop-blur-md dark:border-[#dbe6f2] dark:bg-[#eef7ff]/90">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#7FB8FF]/10">
-              <span className="material-symbols-outlined text-[20px] text-[#7FB8FF]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand/10">
+              <span className="material-symbols-outlined text-[20px] text-brand">
                 favorite
               </span>
             </div>
@@ -515,6 +524,14 @@ function getHydrationLabel(fillPercent: number) {
     return "Nearly at goal";
   }
   return "Reached the goal";
+}
+
+function getGreeting(date: Date) {
+  const hour = date.getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  if (hour < 22) return "Good evening";
+  return "Good night";
 }
 
 function formatDateTime(date: Date) {

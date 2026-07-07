@@ -46,16 +46,16 @@ export default function LoginPage() {
   return (
     <main className="relative flex min-h-screen items-center justify-center bg-[#F7FAFF] p-6 text-slate-800 dark:bg-gradient-to-br dark:from-[#f3ecff] dark:via-[#e8f5ff] dark:to-[#e8fff1] dark:text-slate-800">
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-60">
-        <div className="absolute left-[-5%] top-[-10%] h-[40%] w-[40%] rounded-full bg-[#E9E2FF]/30 blur-[100px] dark:bg-[#7FB8FF]/10" />
-        <div className="absolute bottom-[-10%] right-[-5%] h-[40%] w-[40%] rounded-full bg-[#7FB8FF]/10 blur-[120px]" />
+        <div className="absolute left-[-5%] top-[-10%] h-[40%] w-[40%] rounded-full bg-[#E9E2FF]/30 blur-[100px] dark:bg-brand/10" />
+        <div className="absolute bottom-[-10%] right-[-5%] h-[40%] w-[40%] rounded-full bg-brand/10 blur-[120px]" />
       </div>
 
       <div className="relative z-10 w-full max-w-[420px] animate-fade-in">
         <div className="relative flex flex-col gap-8 overflow-hidden rounded-2xl border border-[#E3E8F5] bg-white p-8 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.05)] dark:border-[#dbe6f2] dark:bg-[#eef7ff] md:p-10">
-          <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-transparent via-[#7FB8FF]/30 to-transparent" />
+          <div className="absolute left-0 top-0 h-1 w-full bg-gradient-to-r from-transparent via-brand/30 to-transparent" />
 
           <div className="flex flex-col items-center gap-3 pt-2 text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-[#7FB8FF]/10 text-[#7FB8FF] animate-float">
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-brand/10 text-brand animate-float">
               <span className="material-symbols-outlined text-2xl">water_drop</span>
             </div>
             <div className="flex flex-col gap-1">
@@ -84,7 +84,7 @@ export default function LoginPage() {
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   placeholder=""
-                  className="h-12 w-full rounded-lg border border-slate-200 bg-[#EEF7F1] px-4 text-center text-slate-800 placeholder:text-slate-400 focus:border-[#7FB8FF] focus:outline-none focus:ring-1 focus:ring-[#7FB8FF] dark:border-[#dbe6f2] dark:bg-[#eef7ff]/70 dark:text-slate-800 dark:placeholder:text-slate-500"
+                  className="h-12 w-full rounded-lg border border-slate-200 bg-[#EEF7F1] px-4 text-center text-slate-800 placeholder:text-slate-400 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand dark:border-[#dbe6f2] dark:bg-[#eef7ff]/70 dark:text-slate-800 dark:placeholder:text-slate-500"
                 />
               </div>
             </div>
@@ -121,7 +121,7 @@ export default function LoginPage() {
                         pinRefs.current[index - 1]?.focus();
                       }
                     }}
-                    className="h-12 w-12 rounded-lg border border-slate-200 bg-[#EEF7F1] text-center text-xl text-[#7FB8FF] focus:border-[#7FB8FF] focus:outline-none focus:ring-1 focus:ring-[#7FB8FF] dark:border-[#dbe6f2] dark:bg-[#eef7ff]/70"
+                    className="h-12 w-12 rounded-lg border border-slate-200 bg-[#EEF7F1] text-center text-xl text-brand focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand dark:border-[#dbe6f2] dark:bg-[#eef7ff]/70"
                   />
                 ))}
               </div>
@@ -148,7 +148,7 @@ export default function LoginPage() {
           <div className="pt-2 text-center">
             <Link
               href="/setup-passcode"
-              className="text-xs text-slate-500/70 underline decoration-dotted underline-offset-4 transition-colors duration-200 hover:text-[#7FB8FF] dark:text-slate-500/70"
+              className="text-xs text-slate-500/70 underline decoration-dotted underline-offset-4 transition-colors duration-200 hover:text-brand dark:text-slate-500/70"
             >
               First time? Set up your passcode
             </Link>
@@ -156,7 +156,7 @@ export default function LoginPage() {
         </div>
 
         <div className="mx-auto mt-12 max-w-xs animate-fade-in text-center [animation-delay:0.2s]">
-          <div className="mb-2 flex items-center justify-center gap-2 text-[#7FB8FF]/60">
+          <div className="mb-2 flex items-center justify-center gap-2 text-brand/60">
             <span className="material-symbols-outlined text-lg">spa</span>
           </div>
           <p className="text-sm italic leading-relaxed text-slate-500/80 dark:text-slate-600/80">

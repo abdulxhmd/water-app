@@ -58,7 +58,7 @@ export default function SetupPasscodePage() {
   return (
     <main className="relative flex min-h-screen items-center justify-center bg-[#F7FAFF] p-6 text-slate-800 dark:bg-gradient-to-br dark:from-[#f3ecff] dark:via-[#e8f5ff] dark:to-[#e8fff1] dark:text-slate-800">
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-60">
-        <div className="absolute left-[-10%] top-[-20%] h-[60%] w-[60%] rounded-full bg-[#eef4f8] blur-[120px] dark:bg-[#7FB8FF]/10" />
+        <div className="absolute left-[-10%] top-[-20%] h-[60%] w-[60%] rounded-full bg-[#eef4f8] blur-[120px] dark:bg-brand/10" />
         <div className="absolute bottom-[-20%] right-[-10%] h-[60%] w-[60%] rounded-full bg-[#fcf5f0] blur-[120px] dark:bg-orange-100/10" />
       </div>
 
@@ -89,7 +89,7 @@ export default function SetupPasscodePage() {
                 autoComplete="username"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className="h-12 w-full rounded-lg border border-slate-200 bg-transparent px-4 text-center text-slate-800 focus:border-[#7FB8FF] focus:outline-none focus:ring-1 focus:ring-[#7FB8FF] dark:border-[#dbe6f2] dark:text-slate-800"
+                className="h-12 w-full rounded-lg border border-slate-200 bg-transparent px-4 text-center text-slate-800 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand dark:border-[#dbe6f2] dark:text-slate-800"
               />
             </div>
 
@@ -120,7 +120,7 @@ export default function SetupPasscodePage() {
                       pinRefs.current[index - 1]?.focus();
                     }
                   }}
-                  className="h-14 w-12 border-b-2 border-slate-200 bg-transparent text-center text-2xl font-light text-slate-800 focus:border-[#7FB8FF] focus:outline-none dark:border-[#dbe6f2] dark:text-slate-800"
+                  className="h-14 w-12 border-b-2 border-slate-200 bg-transparent text-center text-2xl font-light text-slate-800 focus:border-brand focus:outline-none dark:border-[#dbe6f2] dark:text-slate-800"
                 />
               ))}
             </div>
@@ -146,7 +146,7 @@ export default function SetupPasscodePage() {
         <div className="mt-8 text-center opacity-60 transition-opacity hover:opacity-100">
           <Link
             href="/login"
-            className="text-xs text-slate-500 transition-colors hover:text-[#7FB8FF] dark:text-slate-500"
+            className="text-xs text-slate-500 transition-colors hover:text-brand dark:text-slate-500"
           >
             Already have a passcode? Log in
           </Link>

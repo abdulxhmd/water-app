@@ -211,7 +211,7 @@ export default function WeekPage() {
     <div className="min-h-screen bg-[#F7FAFF] text-slate-800 transition-colors duration-200 dark:bg-gradient-to-br dark:from-[#f3ecff] dark:via-[#e8f5ff] dark:to-[#e8fff1] dark:text-slate-800">
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-[#E3E8F5] bg-white/80 px-4 py-4 backdrop-blur-md transition-colors duration-200 dark:border-[#dbe6f2] dark:bg-[#eef7ff]/80 sm:px-6 lg:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#7FB8FF]/10 text-[#7FB8FF]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
             <span className="material-symbols-outlined text-[22px]">
               water_drop
             </span>
@@ -240,7 +240,7 @@ export default function WeekPage() {
         <div className="w-full max-w-[960px] space-y-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[#7FB8FF]">
+              <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-brand">
                 <span className="material-symbols-outlined text-lg">
                   calendar_today
                 </span>
@@ -284,7 +284,7 @@ export default function WeekPage() {
             </div>
           ) : null}
 
-          <div className="flex flex-col items-center justify-between gap-4 rounded-xl border border-[#7FB8FF]/20 bg-gradient-to-r from-[#7FB8FF]/10 to-transparent p-6 text-center md:flex-row md:text-left">
+          <div className="flex flex-col items-center justify-between gap-4 rounded-xl border border-brand/20 bg-gradient-to-r from-brand/10 to-transparent p-6 text-center md:flex-row md:text-left">
             <div>
               <h2 className="mb-1 text-xl font-semibold text-slate-800 dark:text-slate-800 md:text-2xl">
                 {isWeekLocked
@@ -383,9 +383,9 @@ export default function WeekPage() {
           ) : null}
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div className="group relative overflow-hidden rounded-xl border border-[#E3E8F5] bg-white p-6 shadow-sm transition-colors hover:border-[#7FB8FF]/30 dark:border-[#dbe6f2] dark:bg-[#eef7ff]">
+            <div className="group relative overflow-hidden rounded-xl border border-[#E3E8F5] bg-white p-6 shadow-sm transition-colors hover:border-brand/30 dark:border-[#dbe6f2] dark:bg-[#eef7ff]">
               <div className="absolute right-0 top-0 p-4 opacity-10 transition-opacity group-hover:opacity-20">
-                <span className="material-symbols-outlined text-9xl text-[#7FB8FF] rotate-12">
+                <span className="material-symbols-outlined text-9xl text-brand rotate-12">
                   water_drop
                 </span>
               </div>
@@ -395,7 +395,7 @@ export default function WeekPage() {
                     avatarUrl={avatarUrl}
                     name={currentName}
                     sizeClassName="h-14 w-14"
-                    borderClassName="border-2 border-[#7FB8FF] shadow-lg shadow-[#7FB8FF]/20"
+                    borderClassName="border-2 border-brand shadow-lg shadow-brand/20"
                   />
                   <div>
                     <h3 className="text-lg font-bold">{getPossessive(currentName)} Total</h3>
@@ -420,7 +420,7 @@ export default function WeekPage() {
                   </span>
                 </div>
                 <div className="mb-2 h-3 w-full overflow-hidden rounded-full bg-[#EEF7F1] dark:bg-[#f4f3ff]">
-                  <div className="h-3 rounded-full bg-[#7FB8FF]" style={{ width: `${Math.min(100, Math.round((effectiveWeeklyTotals.userA / 28000) * 100))}%` }} />
+                  <div className="h-3 rounded-full bg-brand" style={{ width: `${Math.min(100, Math.round((effectiveWeeklyTotals.userA / 28000) * 100))}%` }} />
                 </div>
                 <div className="flex justify-between text-xs font-medium text-slate-500">
                   <span>{currentWeekStatus}</span>
@@ -466,7 +466,7 @@ export default function WeekPage() {
                   </span>
                 </div>
                 <div className="mb-2 h-3 w-full overflow-hidden rounded-full bg-[#EEF7F1] dark:bg-[#f4f3ff]">
-                  <div className="h-3 rounded-full bg-[#7FB8FF]/60" style={{ width: `${Math.min(100, Math.round((effectiveWeeklyTotals.userB / 28000) * 100))}%` }} />
+                  <div className="h-3 rounded-full bg-brand/60" style={{ width: `${Math.min(100, Math.round((effectiveWeeklyTotals.userB / 28000) * 100))}%` }} />
                 </div>
                 <div className="flex justify-between text-xs font-medium text-slate-500">
                   <span>{partnerWeekStatus}</span>
@@ -483,7 +483,7 @@ export default function WeekPage() {
                   <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-600">
                     {getPossessive(currentName)} Intake
                   </h4>
-                  <span className="rounded bg-[#7FB8FF]/10 px-2 py-1 text-xs font-medium text-[#7FB8FF]">
+                  <span className="rounded bg-brand/10 px-2 py-1 text-xs font-medium text-brand">
                     {currentDaysAtGoalLabel}
                   </span>
                 </div>
@@ -493,7 +493,7 @@ export default function WeekPage() {
                   return (
                     <div key={day.date} className="group flex h-full flex-col items-center justify-end gap-2">
                       <div
-                        className="w-full rounded-t-sm bg-[#7FB8FF]/40 transition-all duration-200 group-hover:bg-[#7FB8FF]"
+                        className="w-full rounded-t-sm bg-brand/40 transition-all duration-200 group-hover:bg-brand"
                         style={{ height: `${height}%` }}
                         title={`${day.water} ml`}
                       />
@@ -521,7 +521,7 @@ export default function WeekPage() {
                     return (
                       <div key={day.date} className="group flex h-full flex-col items-center justify-end gap-2">
                         <div
-                          className="w-full rounded-t-sm bg-slate-400/40 transition-all duration-200 group-hover:bg-[#7FB8FF]/40"
+                          className="w-full rounded-t-sm bg-slate-400/40 transition-all duration-200 group-hover:bg-brand/40"
                           style={{ height: `${height}%` }}
                           title={`${day.water} ml`}
                         />

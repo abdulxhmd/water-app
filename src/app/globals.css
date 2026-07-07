@@ -3,11 +3,13 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --color-brand: #7FB8FF;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand: var(--color-brand);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -79,6 +81,23 @@ body {
   left: 0;
   animation: wave 10s linear infinite;
   opacity: 0.8;
+}
+
+@keyframes wave-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-wave-slow {
+  animation: wave-x 8s linear infinite;
+}
+
+.animate-wave-fast {
+  animation: wave-x 5s linear infinite reverse;
 }
 
 .water-container {

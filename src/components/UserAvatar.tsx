@@ -29,7 +29,7 @@ export default function UserAvatar({
   const initial = name.trim().charAt(0).toUpperCase() || "?";
   return (
     <div
-      className={`${base} flex items-center justify-center bg-[#7FB8FF]/15 text-sm font-semibold text-[#2f4f86] dark:bg-[#7FB8FF]/20`}
+      className={`${base} flex items-center justify-center bg-brand/15 text-sm font-semibold text-[#2f4f86] dark:bg-brand/20`}
     >
       {initial}
     </div>

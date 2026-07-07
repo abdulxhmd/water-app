@@ -10,9 +10,8 @@ import { getUserNames } from "@/lib/users";
 import { buildPassword } from "@/lib/credentials";
 import UserAvatar from "@/components/UserAvatar";
 import PageFooter from "@/components/PageFooter";
-
-const THEMES = ["calm", "focused", "bold"] as const;
-type Theme = (typeof THEMES)[number];
+import { THEMES, applyThemeAccent, cacheTheme, isTheme } from "@/lib/theme";
+import type { Theme } from "@/lib/types";
 
 const MAX_AVATAR_BYTES = 3 * 1024 * 1024;
 
@@ -60,8 +59,8 @@ export default function SettingsPage() {
         setDailyReminder(data.daily_reminder ?? false);
         setPartnerReminder(data.partner_reminder ?? false);
         setAvatarUrl(data.avatar_url ?? null);
-        if (data.theme && (THEMES as readonly string[]).includes(data.theme)) {
-          setTheme(data.theme as Theme);
+        if (data.theme && isTheme(data.theme)) {
+          setTheme(data.theme);
         }
       }
     };
@@ -124,6 +123,7 @@ export default function SettingsPage() {
     const previousTheme = theme;
     setTheme(nextTheme);
     setPresenceStatus(null);
+    applyThemeAccent(nextTheme);
 
     const { error } = await supabase
       .from("user_preferences")
@@ -131,8 +131,12 @@ export default function SettingsPage() {
 
     if (error) {
       setTheme(previousTheme);
+      applyThemeAccent(previousTheme);
       setPresenceStatus({ type: "error", message: "Could not save theme." });
+      return;
     }
+
+    cacheTheme(nextTheme);
   };
 
   const handleReminderToggle = async (field: "daily_reminder" | "partner_reminder", value: boolean) => {
@@ -209,7 +213,7 @@ export default function SettingsPage() {
     <div className="min-h-screen bg-[#F7FAFF] text-slate-800 transition-colors duration-200 dark:bg-gradient-to-br dark:from-[#f3ecff] dark:via-[#e8f5ff] dark:to-[#e8fff1] dark:text-slate-800">
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-[#E3E8F5] bg-white/80 px-4 py-4 backdrop-blur-md transition-colors duration-200 dark:border-[#dbe6f2] dark:bg-[#eef7ff]/80 sm:px-6 lg:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#7FB8FF]/10 text-[#7FB8FF]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
             <span className="material-symbols-outlined text-[22px]">water_drop</span>
           </div>
           <div className="flex flex-col">
@@ -261,7 +265,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => avatarInputRef.current?.click()}
                 disabled={isUploadingAvatar}
-                className="text-sm text-slate-700 underline transition-colors hover:text-[#7FB8FF] disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-600"
+                className="text-sm text-slate-700 underline transition-colors hover:text-brand disabled:cursor-not-allowed disabled:opacity-60 dark:text-slate-600"
               >
                 {isUploadingAvatar ? "Uploading…" : "Change avatar"}
               </button>
@@ -275,8 +279,8 @@ export default function SettingsPage() {
                   onClick={() => handleThemeChange(option)}
                   className={`rounded-lg border py-2 text-sm capitalize transition-colors ${
                     theme === option
-                      ? "border-[#7FB8FF] bg-[#7FB8FF]/10 text-[#7FB8FF]"
-                      : "border-[#E3E8F5] text-slate-700 hover:border-[#7FB8FF]/40 hover:text-[#7FB8FF] dark:border-[#dbe6f2] dark:text-slate-700"
+                      ? "border-brand bg-brand/10 text-brand"
+                      : "border-[#E3E8F5] text-slate-700 hover:border-brand/40 hover:text-brand dark:border-[#dbe6f2] dark:text-slate-700"
                   }`}
                 >
                   {option}
@@ -306,7 +310,7 @@ export default function SettingsPage() {
                   type="checkbox"
                   checked={dailyReminder}
                   onChange={(e) => handleReminderToggle("daily_reminder", e.target.checked)}
-                  className="h-4 w-4 accent-[#7FB8FF]"
+                  className="h-4 w-4 accent-brand"
                 />
               </label>
 
@@ -316,7 +320,7 @@ export default function SettingsPage() {
                   type="checkbox"
                   checked={partnerReminder}
                   onChange={(e) => handleReminderToggle("partner_reminder", e.target.checked)}
-                  className="h-4 w-4 accent-[#7FB8FF]"
+                  className="h-4 w-4 accent-brand"
                 />
               </label>
 
@@ -353,7 +357,7 @@ export default function SettingsPage() {
                 setNewPin(e.target.value.replace(/\D/g, "").slice(0, 4));
                 setPinStatus(null);
               }}
-              className="mt-4 w-full rounded-lg border border-[#E3E8F5] bg-[#EEF7F1] px-3 py-2 text-sm text-slate-800 focus:border-[#7FB8FF] focus:outline-none focus:ring-1 focus:ring-[#7FB8FF] dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-800"
+              className="mt-4 w-full rounded-lg border border-[#E3E8F5] bg-[#EEF7F1] px-3 py-2 text-sm text-slate-800 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-800"
             />
 
             {pinStatus ? (
@@ -379,7 +383,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full rounded-xl border border-[#E3E8F5] bg-white py-2 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-[#7FB8FF]/40 hover:text-[#7FB8FF] dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-700"
+            className="w-full rounded-xl border border-[#E3E8F5] bg-white py-2 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-brand/40 hover:text-brand dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-700"
           >
             Log out
           </button>

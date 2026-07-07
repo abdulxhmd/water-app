@@ -294,7 +294,7 @@ export default function MonthPage() {
     <div className="min-h-screen bg-[#F7FAFF] text-slate-800 transition-colors duration-200 dark:bg-gradient-to-br dark:from-[#f3ecff] dark:via-[#e8f5ff] dark:to-[#e8fff1] dark:text-slate-800">
       <header className="sticky top-0 z-50 flex items-center justify-between border-b border-[#E3E8F5] bg-white/80 px-4 py-4 backdrop-blur-md dark:border-[#dbe6f2] dark:bg-[#eef7ff]/80 sm:px-6 lg:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#7FB8FF]/10 text-[#7FB8FF]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
             <span className="material-symbols-outlined text-[22px]">water_drop</span>
           </div>
           <div className="flex flex-col">
@@ -326,7 +326,7 @@ export default function MonthPage() {
       <main className="flex flex-1 justify-center px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex w-full max-w-4xl flex-col gap-8">
           <section className="flex flex-col items-center justify-center space-y-6 pb-4 pt-8 text-center">
-            <div className="inline-flex items-center gap-2 rounded-full bg-[#7FB8FF]/10 px-4 py-1.5 text-sm font-semibold uppercase tracking-wide text-[#7FB8FF] dark:bg-[#7FB8FF]/20">
+            <div className="inline-flex items-center gap-2 rounded-full bg-brand/10 px-4 py-1.5 text-sm font-semibold uppercase tracking-wide text-brand dark:bg-brand/20">
               <span className="material-symbols-outlined text-lg">trophy</span>
               {monthName} Champion
             </div>
@@ -356,11 +356,11 @@ export default function MonthPage() {
           <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
             <div className="md:col-span-12">
               <div className="group relative flex flex-col items-center rounded-xl border border-[#E3E8F5] bg-white p-8 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff]">
-                <div className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#7FB8FF]/8 blur-3xl transition-all duration-700 group-hover:bg-[#7FB8FF]/15" />
+                <div className="absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/8 blur-3xl transition-all duration-700 group-hover:bg-brand/15" />
                 <div className="relative mb-6">
-                  <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-[#7FB8FF] to-[#E9E2FF] blur opacity-40 transition duration-500 group-hover:opacity-75" />
+                  <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-brand to-[#E9E2FF] blur opacity-40 transition duration-500 group-hover:opacity-75" />
                   {monthlyWinner === "tie" ? (
-                    <div className="relative flex h-32 w-32 items-center justify-center rounded-full border-4 border-white bg-[#7FB8FF]/10 text-[#7FB8FF] shadow-xl dark:border-[#dbe6f2] md:h-40 md:w-40">
+                    <div className="relative flex h-32 w-32 items-center justify-center rounded-full border-4 border-white bg-brand/10 text-brand shadow-xl dark:border-[#dbe6f2] md:h-40 md:w-40">
                       <span className="material-symbols-outlined text-5xl">
                         handshake
                       </span>
@@ -374,7 +374,7 @@ export default function MonthPage() {
                       className="text-4xl"
                     />
                   )}
-                  <div className="absolute bottom-0 right-0 rounded-full border-4 border-white bg-[#7FB8FF] p-2 text-white shadow-lg dark:border-slate-900">
+                  <div className="absolute bottom-0 right-0 rounded-full border-4 border-white bg-brand p-2 text-white shadow-lg dark:border-slate-900">
                     <span className="material-symbols-outlined text-xl">star</span>
                   </div>
                 </div>
@@ -384,7 +384,7 @@ export default function MonthPage() {
                   </div>
                   <div className="text-slate-500 dark:text-slate-600">
                     Weeks completed:{" "}
-                    <span className="text-[#7FB8FF]">{weeklyResults.length}</span>
+                    <span className="text-brand">{weeklyResults.length}</span>
                   </div>
                 </div>
                 <div className="flex w-full max-w-sm items-center justify-between rounded-lg border border-[#E3E8F5] bg-[#EEF7F1] p-4 dark:border-[#dbe6f2] dark:bg-[#eef7ff]/70">
@@ -426,10 +426,10 @@ export default function MonthPage() {
           </div>
 
           <div className="flex flex-col overflow-hidden rounded-xl border border-[#E3E8F5] bg-white shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff] md:flex-row">
-            <div className="relative flex w-full flex-col items-center justify-center gap-6 border-b border-[#E3E8F5] bg-[#7FB8FF]/5 p-8 text-center dark:border-[#dbe6f2] dark:bg-[#eef7ff] md:w-2/5 md:border-b-0 md:border-r md:p-12">
-              <div className="absolute inset-0 opacity-10 [background-image:radial-gradient(#7FB8FF_1px,transparent_1px)] [background-size:20px_20px]" />
+            <div className="relative flex w-full flex-col items-center justify-center gap-6 border-b border-[#E3E8F5] bg-brand/5 p-8 text-center dark:border-[#dbe6f2] dark:bg-[#eef7ff] md:w-2/5 md:border-b-0 md:border-r md:p-12">
+              <div className="absolute inset-0 opacity-10 [background-image:radial-gradient(var(--color-brand)_1px,transparent_1px)] [background-size:20px_20px]" />
               <div className="relative z-10 rounded-full bg-white p-6 shadow-sm transition-transform duration-300 hover:scale-105 dark:bg-slate-700">
-                <span className="material-symbols-outlined text-6xl text-[#7FB8FF]">
+                <span className="material-symbols-outlined text-6xl text-brand">
                   redeem
                 </span>
               </div>
@@ -479,7 +479,7 @@ export default function MonthPage() {
                         onChange={(event) => setFulfillmentNoteDraft(event.target.value)}
                         maxLength={300}
                         placeholder="Optional note about how it was fulfilled…"
-                        className="min-h-[70px] w-full resize-none rounded-lg border border-[#E3E8F5] bg-white p-3 text-sm text-slate-700 outline-none focus:border-[#7FB8FF] dark:border-[#dbe6f2]"
+                        className="min-h-[70px] w-full resize-none rounded-lg border border-[#E3E8F5] bg-white p-3 text-sm text-slate-700 outline-none focus:border-brand dark:border-[#dbe6f2]"
                       />
                       <button
                         onClick={handleMarkFulfilled}
@@ -513,7 +513,7 @@ export default function MonthPage() {
                         value={wishDraft}
                         onChange={(event) => setWishDraft(event.target.value)}
                         maxLength={500}
-                        className="min-h-[140px] w-full resize-none rounded-xl border border-[#E3E8F5] bg-[#EEF7F1] p-4 text-base text-slate-800 placeholder:text-slate-400 outline-none transition-all focus:border-[#7FB8FF] focus:ring-4 focus:ring-[#7FB8FF]/20 disabled:cursor-not-allowed disabled:opacity-70 dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-800"
+                        className="min-h-[140px] w-full resize-none rounded-xl border border-[#E3E8F5] bg-[#EEF7F1] p-4 text-base text-slate-800 placeholder:text-slate-400 outline-none transition-all focus:border-brand focus:ring-4 focus:ring-brand/20 disabled:cursor-not-allowed disabled:opacity-70 dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-800"
                         placeholder="For example: I wish for a homemade pasta dinner tonight! 🍝"
                       />
                       <div className="absolute bottom-3 right-3">

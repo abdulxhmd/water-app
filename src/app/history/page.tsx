@@ -155,7 +155,7 @@ export default function HistoryPage() {
     <div className="min-h-screen bg-[#F7FAFF] text-slate-800 transition-colors duration-200 dark:bg-gradient-to-br dark:from-[#f3ecff] dark:via-[#e8f5ff] dark:to-[#e8fff1] dark:text-slate-800">
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-[#E3E8F5] bg-white/80 px-4 py-4 backdrop-blur-md dark:border-[#dbe6f2] dark:bg-[#eef7ff]/80 sm:px-6 lg:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#7FB8FF]/10 text-[#7FB8FF]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
             <span className="material-symbols-outlined text-[22px]">history</span>
           </div>
           <div className="flex flex-col">
@@ -228,7 +228,7 @@ export default function HistoryPage() {
                           }
                           maxLength={300}
                           placeholder="Optional note about how it was fulfilled…"
-                          className="min-h-[60px] w-full resize-none rounded-lg border border-[#E3E8F5] bg-white p-3 text-sm text-slate-700 outline-none focus:border-[#7FB8FF] dark:border-[#dbe6f2]"
+                          className="min-h-[60px] w-full resize-none rounded-lg border border-[#E3E8F5] bg-white p-3 text-sm text-slate-700 outline-none focus:border-brand dark:border-[#dbe6f2]"
                         />
                         <button
                           onClick={() => handleMarkFulfilled(month.wish!)}
@@ -254,7 +254,7 @@ export default function HistoryPage() {
                   >
                     <div className="flex items-center gap-4">
                       {month.isTie ? (
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#7FB8FF]/10 text-[#7FB8FF]">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand/10 text-brand">
                           <span className="material-symbols-outlined text-xl">handshake</span>
                         </div>
                       ) : (
