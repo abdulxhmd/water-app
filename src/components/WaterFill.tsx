@@ -3,22 +3,18 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import {
-  AMBIENT_INTERVAL,
-  AMBIENT_NOISE,
-  LEVEL_DAMPING,
-  LEVEL_STIFFNESS,
+  IDLE_WAVE_AMPLITUDE,
+  IDLE_WAVE_SPEED,
+  LEVEL_EASE,
   NUM_COLUMNS,
-  POUR_FORCE,
   TILT_SLOSH,
   TOUCH_FORCE,
   createSurface,
   disturb,
   heightAt,
   shortestAngleDelta,
-  spawnParticle,
-  stepParticles,
   stepSurface,
-  type Particle,
+  waterlineY,
 } from "@/lib/waterSim";
 
 type WaterFillProps = {
@@ -27,11 +23,9 @@ type WaterFillProps = {
   className?: string;
 };
 
-/** Canvas bleed around the card so spill droplets can fall outside it. */
-const CANVAS_PAD = 32;
 const CARD_RADIUS = 24; // matches rounded-3xl
 const FIXED_STEP_MS = 1000 / 60;
-const ANGLE_SMOOTHING = 0.12;
+const ANGLE_SMOOTHING = 0.1;
 const GRAVITY_DEAD_ZONE = 1.5;
 
 export default function WaterFill(props: WaterFillProps) {
@@ -47,13 +41,12 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
   // All mutable sim state lives outside React so the loop never re-renders.
   const simRef = useRef({
     surface: createSurface(NUM_COLUMNS),
-    particles: [] as Particle[],
     level: 0,
-    levelVel: 0,
     targetLevel: 0,
     angle: 0,
     targetAngle: 0,
     prevAngle: 0,
+    time: 0,
     stepCount: 0,
     width: 0,
     height: 0,
@@ -104,8 +97,8 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
       const rect = root.getBoundingClientRect();
       sim.width = rect.width;
       sim.height = rect.height;
-      canvas.width = Math.round((rect.width + CANVAS_PAD * 2) * dpr);
-      canvas.height = Math.round((rect.height + CANVAS_PAD * 2) * dpr);
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
     };
     resize();
     const resizeObserver = new ResizeObserver(resize);
@@ -117,11 +110,10 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
     const columnOf = (worldX: number) =>
       ((worldX + span()) / (span() * 2)) * (NUM_COLUMNS - 1);
     const angleRad = () => (sim.angle * Math.PI) / 180;
-    const projectedHeight = () => {
-      const a = angleRad();
-      return Math.abs(Math.cos(a)) * sim.height + Math.abs(Math.sin(a)) * sim.width;
-    };
-    const surfaceBaseY = () => (0.5 - sim.level) * projectedHeight();
+    // Exact volume-conserving waterline: the submerged area of the rotated
+    // card is always precisely level × card area, so tilting never appears
+    // to add or remove water.
+    const surfaceBaseY = () => waterlineY(sim.level, sim.width, sim.height, angleRad());
     const toWorld = (cx: number, cy: number) => {
       const a = -angleRad();
       return {
@@ -129,17 +121,28 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
         y: cx * Math.sin(a) + cy * Math.cos(a),
       };
     };
+
+    // Gentle ambient swell, purely visual — two slow phase-shifted sines so
+    // the idle surface breathes like the original CSS waves, without pumping
+    // energy into the springs.
+    const idleOffset = (worldX: number) => {
+      const k = (Math.PI * 2) / (span() * 1.6);
+      return (
+        Math.sin(worldX * k + sim.time * IDLE_WAVE_SPEED) * IDLE_WAVE_AMPLITUDE * 0.6 +
+        Math.sin(worldX * k * 1.7 - sim.time * IDLE_WAVE_SPEED * 0.8) * IDLE_WAVE_AMPLITUDE * 0.4
+      );
+    };
+
     const surfaceYAt = (worldX: number) =>
-      surfaceBaseY() + heightAt(sim.surface, columnOf(worldX));
-    const isPouring = () => sim.targetLevel - sim.level > 0.004;
-    const pourWorld = () => toWorld(0, -sim.height / 2);
+      surfaceBaseY() + heightAt(sim.surface, columnOf(worldX)) + idleOffset(worldX);
 
     // ---------------------------- physics step ------------------------------
     const physicsStep = () => {
       sim.stepCount += 1;
+      sim.time += FIXED_STEP_MS / 1000;
 
-      // Smooth the angle; the *change* in angle is angular momentum that
-      // sloshes the surface (overshoot + settle comes from the springs).
+      // Smooth the angle; the *change* injects a soft slosh so tilting feels
+      // like liquid, not a hinged plate.
       sim.angle += shortestAngleDelta(sim.targetAngle, sim.angle) * ANGLE_SMOOTHING;
       const kickRad = ((sim.angle - sim.prevAngle) * Math.PI) / 180;
       sim.prevAngle = sim.angle;
@@ -150,68 +153,10 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
         }
       }
 
-      // Level rises through a spring so it overshoots and settles.
-      sim.levelVel += (sim.targetLevel - sim.level) * LEVEL_STIFFNESS;
-      sim.levelVel *= LEVEL_DAMPING;
-      sim.level += sim.levelVel;
-
-      // Pour stream disturbs the impact column and splashes.
-      if (isPouring() && sim.width > 0) {
-        const impact = pourWorld();
-        const col = columnOf(impact.x);
-        disturb(sim.surface, col + (Math.random() - 0.5) * 2, POUR_FORCE * (0.6 + Math.random() * 0.8));
-        if (sim.stepCount % 4 === 0) {
-          const sy = surfaceYAt(impact.x);
-          spawnParticle(sim.particles, {
-            x: impact.x + (Math.random() - 0.5) * 10,
-            y: sy,
-            vx: (Math.random() - 0.5) * 2.4,
-            vy: -(1.5 + Math.random() * 2),
-            life: 40,
-            maxLife: 40,
-            r: 1.5 + Math.random() * 1.5,
-            kind: "splash",
-          });
-        }
-      }
-
-      // Idle: occasional tiny ripples so the surface never looks frozen.
-      if (sim.stepCount % AMBIENT_INTERVAL === 0) {
-        disturb(sim.surface, Math.random() * (NUM_COLUMNS - 1), (Math.random() - 0.5) * 2 * AMBIENT_NOISE);
-      }
+      // Level eases exponentially — smooth rise, no bounce, no fanfare.
+      sim.level += (sim.targetLevel - sim.level) * LEVEL_EASE;
 
       stepSurface(sim.surface);
-      stepParticles(sim.particles);
-
-      // Splash particles falling back through the surface re-disturb it.
-      for (let i = sim.particles.length - 1; i >= 0; i--) {
-        const p = sim.particles[i];
-        if (p.kind !== "splash" || p.vy <= 0) continue;
-        if (p.y >= surfaceYAt(p.x)) {
-          disturb(sim.surface, columnOf(p.x), Math.min(1, p.vy * 0.12));
-          sim.particles.splice(i, 1);
-        }
-      }
-
-      // Spill: a top corner of the card dipping under the world waterline
-      // pours droplets outside. Visual only — the logged ml never changes.
-      if (sim.width > 0 && sim.stepCount % 2 === 0) {
-        for (const cornerX of [-sim.width / 2, sim.width / 2]) {
-          const c = toWorld(cornerX, -sim.height / 2);
-          if (c.y > surfaceYAt(c.x) + 2) {
-            spawnParticle(sim.particles, {
-              x: c.x + (Math.random() - 0.5) * 4,
-              y: c.y,
-              vx: Math.sign(c.x || 1) * Math.random() * 0.8,
-              vy: 0.5 + Math.random(),
-              life: 55,
-              maxLife: 55,
-              r: 1.2 + Math.random() * 1.4,
-              kind: "spill",
-            });
-          }
-        }
-      }
     };
 
     // ------------------------------- drawing --------------------------------
@@ -220,86 +165,40 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
 
     const traceSurface = () => {
       ctx.beginPath();
-      ctx.moveTo(columnX(0), surfaceBaseY() + sim.surface.heights[0]);
+      ctx.moveTo(columnX(0), surfaceYAt(columnX(0)));
       for (let i = 1; i < NUM_COLUMNS; i++) {
-        ctx.lineTo(columnX(i), surfaceBaseY() + sim.surface.heights[i]);
+        const x = columnX(i);
+        ctx.lineTo(x, surfaceYAt(x));
       }
     };
 
     const draw = () => {
       const { width: w, height: h } = sim;
       if (w === 0) return;
-      ctx.setTransform(dpr, 0, 0, dpr, (w / 2 + CANVAS_PAD) * dpr, (h / 2 + CANVAS_PAD) * dpr);
-      ctx.clearRect(-w / 2 - CANVAS_PAD, -h / 2 - CANVAS_PAD, w + CANVAS_PAD * 2, h + CANVAS_PAD * 2);
+      ctx.setTransform(dpr, 0, 0, dpr, (w / 2) * dpr, (h / 2) * dpr);
+      ctx.clearRect(-w / 2, -h / 2, w, h);
 
-      const deep = span() * 1.6;
-
-      // Water body + splashes, clipped to the card.
       ctx.save();
       ctx.beginPath();
       ctx.roundRect(-w / 2, -h / 2, w, h, CARD_RADIUS);
       ctx.clip();
       ctx.rotate(angleRad());
 
+      const deep = span() * 1.6;
+
       traceSurface();
       ctx.lineTo(span(), deep);
       ctx.lineTo(-span(), deep);
       ctx.closePath();
-      ctx.fillStyle = rgba(0.28);
+      ctx.fillStyle = rgba(0.25);
       ctx.fill();
 
       traceSurface();
-      ctx.strokeStyle = rgba(0.55);
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = rgba(0.4);
+      ctx.lineWidth = 2;
       ctx.lineJoin = "round";
       ctx.stroke();
 
-      if (isPouring()) {
-        const impact = pourWorld();
-        const sy = surfaceYAt(impact.x);
-        if (sy > impact.y) {
-          ctx.strokeStyle = rgba(0.5);
-          ctx.lineWidth = 3.5;
-          ctx.beginPath();
-          ctx.moveTo(impact.x, impact.y);
-          ctx.lineTo(impact.x, sy);
-          ctx.stroke();
-          ctx.strokeStyle = "rgba(255,255,255,0.5)";
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
-      }
-
-      for (const p of sim.particles) {
-        if (p.kind !== "splash") continue;
-        ctx.fillStyle = rgba(0.8 * (p.life / p.maxLife));
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-
-      // Spill droplets + trickles render outside the clip.
-      ctx.save();
-      ctx.rotate(angleRad());
-      for (const p of sim.particles) {
-        if (p.kind !== "spill") continue;
-        ctx.fillStyle = rgba(0.7 * (p.life / p.maxLife));
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      for (const cornerX of [-w / 2, w / 2]) {
-        const c = toWorld(cornerX, -h / 2);
-        if (c.y > surfaceYAt(c.x) + 2) {
-          ctx.strokeStyle = rgba(0.3);
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(c.x, c.y);
-          ctx.lineTo(c.x, c.y + 26);
-          ctx.stroke();
-        }
-      }
       ctx.restore();
     };
 
@@ -363,14 +262,14 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
     // ------------------------------- touch ----------------------------------
     const pointerToWorld = (event: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
-      const cx = event.clientX - rect.left - CANVAS_PAD - sim.width / 2;
-      const cy = event.clientY - rect.top - CANVAS_PAD - sim.height / 2;
+      const cx = event.clientX - rect.left - sim.width / 2;
+      const cy = event.clientY - rect.top - sim.height / 2;
       return toWorld(cx, cy);
     };
 
     const disturbAt = (world: { x: number; y: number }, force: number) => {
       // Only react near or below the surface — poking the air shouldn't ripple.
-      if (world.y < surfaceYAt(world.x) - 50) return;
+      if (world.y < surfaceYAt(world.x) - 40) return;
       disturb(sim.surface, columnOf(world.x), force);
     };
 
@@ -386,7 +285,7 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
         event.clientY - sim.lastPointer.y
       );
       sim.lastPointer = { x: event.clientX, y: event.clientY };
-      disturbAt(pointerToWorld(event), Math.min(2, speed * 0.08) * TOUCH_FORCE * 0.5);
+      disturbAt(pointerToWorld(event), Math.min(1, speed * 0.05) * TOUCH_FORCE * 0.4);
     };
     const onPointerEnd = () => {
       sim.pointerActive = false;
@@ -418,19 +317,19 @@ function SimulatedWaterFill({ fillPercent, tiltEnabled = false, className = "" }
   return (
     <div
       ref={rootRef}
-      className={`absolute inset-0 rounded-3xl border border-[#E3E8F5] bg-white/70 ${className}`}
+      className={`absolute inset-0 overflow-hidden rounded-3xl border border-[#E3E8F5] bg-white/70 ${className}`}
     >
       <canvas
         ref={canvasRef}
-        className="absolute -inset-8 h-[calc(100%+4rem)] w-[calc(100%+4rem)]"
+        className="absolute inset-0 h-full w-full"
         style={{ touchAction: "pan-y" }}
       />
     </div>
   );
 }
 
-// Calm fallback for prefers-reduced-motion: the previous CSS/SVG water with
-// no simulation, no sensors, no particles.
+// Calm fallback for prefers-reduced-motion: static CSS water, no simulation,
+// no sensors.
 function CalmWaterFill({ fillPercent, className = "" }: WaterFillProps) {
   const clampedFill = Math.max(0, Math.min(100, fillPercent));
   return (

@@ -18,42 +18,21 @@ export const SPREAD = 0.12;
 /** Neighbor-propagation passes per step. More = smoother, wider ripples. */
 export const SPREAD_PASSES = 2;
 
-// --- Disturbance tuning -----------------------------------------------------
-/** Velocity kick (px/step) applied at the pour column while water is rising. */
-export const POUR_FORCE = 1.1;
-/** Velocity kick for a tap; drags scale up to ~2x with pointer speed. */
-export const TOUCH_FORCE = 2.2;
+// --- Feel tuning ------------------------------------------------------------
+/** Velocity kick for a tap; drags scale with pointer speed. */
+export const TOUCH_FORCE = 1.4;
 /** How strongly a change in device angle sloshes the surface. */
-export const TILT_SLOSH = 0.35;
-/** Max amplitude (px) of the tiny idle ripples. */
-export const AMBIENT_NOISE = 0.18;
-/** Steps between idle ripple impulses. */
-export const AMBIENT_INTERVAL = 40;
-
-// --- Level spring (fill changes overshoot then settle) -----------------------
-export const LEVEL_STIFFNESS = 0.012;
-export const LEVEL_DAMPING = 0.9;
-
-// --- Particles ----------------------------------------------------------------
-export const PARTICLE_GRAVITY = 0.32;
-export const PARTICLE_DRAG = 0.985;
-export const MAX_PARTICLES = 110;
+export const TILT_SLOSH = 0.2;
+/** Peak size (px) of the barely-there idle swell. Purely visual. */
+export const IDLE_WAVE_AMPLITUDE = 1.5;
+/** Idle swell speed (radians/second). */
+export const IDLE_WAVE_SPEED = 0.9;
+/** Exponential ease applied to level changes per step. Higher = faster rise. */
+export const LEVEL_EASE = 0.05;
 
 export type Surface = {
   heights: Float32Array;
   velocities: Float32Array;
-};
-
-export type Particle = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  maxLife: number;
-  r: number;
-  /** splash particles fall back into the surface; spill particles fall away */
-  kind: "splash" | "spill";
 };
 
 export function createSurface(columns: number = NUM_COLUMNS): Surface {
@@ -126,30 +105,48 @@ export function heightAt(surface: Surface, position: number): number {
   return heights[i] * (1 - frac) + heights[i + 1] * frac;
 }
 
-export function spawnParticle(particles: Particle[], particle: Particle): void {
-  if (particles.length >= MAX_PARTICLES) return;
-  particles.push(particle);
-}
-
-export function stepParticles(
-  particles: Particle[],
-  gravity: number = PARTICLE_GRAVITY,
-  drag: number = PARTICLE_DRAG
-): void {
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.vy += gravity;
-    p.vx *= drag;
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life -= 1;
-    if (p.life <= 0) {
-      particles.splice(i, 1);
-    }
-  }
-}
-
 /** Shortest-path angular difference in degrees, for smoothing across ±180°. */
 export function shortestAngleDelta(target: number, current: number): number {
   return ((target - current + 540) % 360) - 180;
+}
+
+/**
+ * World-space y of the waterline for a w×h card rotated by angleRad, such
+ * that the submerged area is EXACTLY fill×(w×h) — volume is conserved at
+ * every angle instead of appearing to gain/lose water as the device tilts.
+ *
+ * The card's cross-section width as a function of world-y is a trapezoid
+ * (grows linearly from the top corner, flat in the middle, shrinks at the
+ * bottom), so the air-area function is piecewise quadratic/linear and can be
+ * inverted in closed form. Coordinates: y grows downward, card centered at 0.
+ */
+export function waterlineY(fill: number, w: number, h: number, angleRad: number): number {
+  const f = Math.max(0, Math.min(1, fill));
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+
+  // Corner world-y values; by symmetry y4 = -y1 and y3 = -y2.
+  const ys = [
+    -(w / 2) * sin - (h / 2) * cos,
+    -(w / 2) * sin + (h / 2) * cos,
+    (w / 2) * sin - (h / 2) * cos,
+    (w / 2) * sin + (h / 2) * cos,
+  ].sort((a, b) => a - b);
+  const [y1, y2, , y4] = ys;
+
+  const area = w * h;
+  const t = y2 - y1; // height of the top (and bottom) triangle segment
+  const m = y4 - y1 - 2 * t; // height of the constant-width middle segment
+  const widthMid = area / (t + m); // cross-section width in the middle
+
+  const airTarget = (1 - f) * area;
+  const triArea = (widthMid * t) / 2;
+
+  if (t > 1e-6 && airTarget <= triArea) {
+    return y1 + Math.sqrt((2 * t * airTarget) / widthMid);
+  }
+  if (t > 1e-6 && airTarget >= area - triArea) {
+    return y4 - Math.sqrt((2 * t * (area - airTarget)) / widthMid);
+  }
+  return y2 + (airTarget - triArea) / widthMid;
 }
