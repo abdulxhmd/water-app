@@ -300,7 +300,7 @@ export default function TodayPage() {
             </button>
           ) : null}
 
-          <div className={`z-10 flex flex-col items-center text-center ${isLoadingToday ? "animate-pulse opacity-60" : ""}`}>
+          <div className={`pointer-events-none z-10 flex flex-col items-center text-center ${isLoadingToday ? "animate-pulse opacity-60" : ""}`}>
             <span className="text-6xl font-bold tracking-tighter text-slate-800 dark:text-slate-800 md:text-7xl">
               {isLoadingToday ? "—" : water}
             </span>
