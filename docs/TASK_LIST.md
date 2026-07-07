@@ -76,6 +76,25 @@ as part of implementing the two reminder settings for real:
       total — this is a narrow pre-existing edge case in the week-locking
       design, not something this change attempts to solve.
 
+## Phase 7: Wish History and Historical Data Backfill
+- [x] Add `fulfilled` / `fulfilled_at` / `fulfillment_note` columns to
+      `wishes`, plus a `wishes_update_pair` RLS policy so either half of the
+      pair can mark a wish fulfilled. The current month's wish card on
+      `/month` now shows a Pending/Fulfilled badge and a "Mark as fulfilled"
+      control with an optional note.
+- [x] Add a new `/history` page listing every completed month with its
+      winner, weekly win tally, and wish — grouped into Pending wishes /
+      Completed wishes / All months. Linked from `/month`.
+- [x] Backfill real historical `daily_water`, `weekly_results`,
+      `monthly_results`, and `wishes` data from several months of notebook
+      records (Shahul/Shaima), via a one-off script that recomputes weekly
+      and monthly winners from the daily totals using the same logic as
+      `src/lib/weeklyResult.ts` / `monthlyResult.ts` (cross-checked against
+      the notebook's own recorded winner for each month — no mismatches).
+      The raw notebook transcript (`HISTORICAL_DATA.md`) and generated
+      import SQL are intentionally not committed to the repo since they're
+      personal data, not application code.
+
 ## Recommended Execution Order
 If we work one by one, this is the best order:
 

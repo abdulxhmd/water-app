@@ -45,9 +45,13 @@ export type UserPreferencesRow = {
 };
 
 export type WishRow = {
+  id: string;
   month_start: string;
   month_end: string;
   user_id: string;
   partner_id: string;
   wish_text: string;
+  fulfilled: boolean;
+  fulfilled_at: string | null;
+  fulfillment_note: string | null;
 };

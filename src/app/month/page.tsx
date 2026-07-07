@@ -62,10 +62,20 @@ export default function MonthPage() {
   const isWishEnabled =
     isMonthLocked && !!currentUserId && monthlyWinner === currentUserId;
 
-  const [wish, setWish] = useState<{ userId: string; wishText: string } | null>(null);
+  type CurrentWish = {
+    id: string;
+    userId: string;
+    wishText: string;
+    fulfilled: boolean;
+    fulfillmentNote: string | null;
+  };
+
+  const [wish, setWish] = useState<CurrentWish | null>(null);
   const [wishDraft, setWishDraft] = useState("");
   const [isSubmittingWish, setIsSubmittingWish] = useState(false);
   const [wishStatus, setWishStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [fulfillmentNoteDraft, setFulfillmentNoteDraft] = useState("");
+  const [isMarkingFulfilled, setIsMarkingFulfilled] = useState(false);
 
   useEffect(() => {
     if (!isMonthLocked || loading || !user || !partnerId) {
@@ -178,7 +188,7 @@ export default function MonthPage() {
     const loadWish = async () => {
       const { data, error } = await supabase
         .from("wishes")
-        .select("user_id, wish_text")
+        .select("id, user_id, wish_text, fulfilled, fulfillment_note")
         .eq("month_start", monthStart)
         .eq("month_end", monthEnd)
         .or(`and(user_id.eq.${USER_A},partner_id.eq.${USER_B}),and(user_id.eq.${USER_B},partner_id.eq.${USER_A})`)
@@ -190,7 +200,13 @@ export default function MonthPage() {
       }
 
       if (data) {
-        setWish({ userId: data.user_id, wishText: data.wish_text });
+        setWish({
+          id: data.id,
+          userId: data.user_id,
+          wishText: data.wish_text,
+          fulfilled: data.fulfilled,
+          fulfillmentNote: data.fulfillment_note,
+        });
       }
     };
 
@@ -206,23 +222,27 @@ export default function MonthPage() {
     setIsSubmittingWish(true);
     setWishStatus(null);
 
-    const { error } = await supabase.from("wishes").insert({
-      month_start: monthStart,
-      month_end: monthEnd,
-      user_id: userId,
-      partner_id: partnerId,
-      wish_text: trimmedWish,
-    });
+    const { data, error } = await supabase
+      .from("wishes")
+      .insert({
+        month_start: monthStart,
+        month_end: monthEnd,
+        user_id: userId,
+        partner_id: partnerId,
+        wish_text: trimmedWish,
+      })
+      .select("id")
+      .single();
 
     setIsSubmittingWish(false);
 
-    if (error) {
+    if (error || !data) {
       console.error("Error saving wish:", error);
       setWishStatus({ type: "error", message: "Could not send your wish." });
       return;
     }
 
-    setWish({ userId, wishText: trimmedWish });
+    setWish({ id: data.id, userId, wishText: trimmedWish, fulfilled: false, fulfillmentNote: null });
     setWishDraft("");
     setWishStatus({ type: "success", message: "Wish sent!" });
 
@@ -238,6 +258,36 @@ export default function MonthPage() {
       .catch((err) => {
         console.error("Error notifying partner:", err);
       });
+  };
+
+  const handleMarkFulfilled = async () => {
+    if (!wish || wish.fulfilled) {
+      return;
+    }
+
+    setIsMarkingFulfilled(true);
+    setWishStatus(null);
+
+    const trimmedNote = fulfillmentNoteDraft.trim();
+    const { error } = await supabase
+      .from("wishes")
+      .update({
+        fulfilled: true,
+        fulfilled_at: new Date().toISOString(),
+        fulfillment_note: trimmedNote || null,
+      })
+      .eq("id", wish.id);
+
+    setIsMarkingFulfilled(false);
+
+    if (error) {
+      console.error("Error marking wish fulfilled:", error);
+      setWishStatus({ type: "error", message: "Could not mark this wish as fulfilled." });
+      return;
+    }
+
+    setWish({ ...wish, fulfilled: true, fulfillmentNote: trimmedNote || null });
+    setFulfillmentNoteDraft("");
   };
 
   return (
@@ -257,6 +307,12 @@ export default function MonthPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Link
+            href="/history"
+            className="rounded-full bg-[#E9E2FF]/60 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-700 transition-colors hover:bg-[#E9E2FF] dark:bg-white/70 dark:text-slate-800 dark:hover:bg-white/90"
+          >
+            History
+          </Link>
           <Link
             href="/settings"
             className="rounded-full bg-[#E9E2FF]/60 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-700 transition-colors hover:bg-[#E9E2FF] dark:bg-white/70 dark:text-slate-800 dark:hover:bg-white/90"
@@ -392,12 +448,54 @@ export default function MonthPage() {
             <div className="flex w-full flex-col justify-center p-6 md:w-3/5 md:p-10">
               {wish ? (
                 <div className="flex flex-col gap-4">
-                  <span className="text-base font-semibold text-slate-800 dark:text-slate-800">
-                    {wish.userId === userId ? "Your wish" : `${monthlyWinnerName}'s wish`}
-                  </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-base font-semibold text-slate-800 dark:text-slate-800">
+                      {wish.userId === userId ? "Your wish" : `${monthlyWinnerName}'s wish`}
+                    </span>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        wish.fulfilled
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {wish.fulfilled ? "Fulfilled" : "Pending"}
+                    </span>
+                  </div>
                   <p className="min-h-[100px] whitespace-pre-wrap rounded-xl border border-[#E3E8F5] bg-[#EEF7F1] p-4 text-base text-slate-800 dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-800">
                     {wish.wishText}
                   </p>
+
+                  {wish.fulfilled ? (
+                    wish.fulfillmentNote ? (
+                      <p className="text-sm italic text-slate-500 dark:text-slate-600">
+                        {wish.fulfillmentNote}
+                      </p>
+                    ) : null
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={fulfillmentNoteDraft}
+                        onChange={(event) => setFulfillmentNoteDraft(event.target.value)}
+                        maxLength={300}
+                        placeholder="Optional note about how it was fulfilled…"
+                        className="min-h-[70px] w-full resize-none rounded-lg border border-[#E3E8F5] bg-white p-3 text-sm text-slate-700 outline-none focus:border-[#7FB8FF] dark:border-[#dbe6f2]"
+                      />
+                      <button
+                        onClick={handleMarkFulfilled}
+                        disabled={isMarkingFulfilled}
+                        className="self-start rounded-full bg-gradient-to-r from-[#9cc7ff] via-[#c5b4ff] to-[#b9f0d2] px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isMarkingFulfilled ? "Saving…" : "Mark as fulfilled"}
+                      </button>
+                    </div>
+                  )}
+
+                  {wishStatus ? (
+                    <p className={`text-xs font-medium ${wishStatus.type === "error" ? "text-rose-500" : "text-emerald-600"}`}>
+                      {wishStatus.message}
+                    </p>
+                  ) : null}
                 </div>
               ) : (
                 <>

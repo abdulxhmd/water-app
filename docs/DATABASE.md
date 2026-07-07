@@ -121,10 +121,19 @@ The monthly winner's reward message, one per month per pair.
 | `user_id`     | uuid — the winner who wrote the wish |
 | `partner_id`  | uuid — the recipient |
 | `wish_text`   | text    |
+| `fulfilled`   | boolean, default false |
+| `fulfilled_at`| timestamptz, nullable |
+| `fulfillment_note` | text, nullable — optional note on how it was fulfilled |
 
 Unique on `(month_start, month_end, user_id)`. RLS insert policy re-derives
 winner status from `monthly_results` server-side, so a client can't insert a
-wish it didn't actually earn.
+wish it didn't actually earn. Either half of the pair may update the
+`fulfilled`/`fulfilled_at`/`fulfillment_note` columns (`wishes_update_pair`
+policy) — in practice the partner marks it done once delivered.
+
+The `/history` page reads `monthly_results` joined with `wishes` (by
+`month_start`/`month_end`) to show every past month's winner alongside its
+wish and pending/fulfilled status.
 
 ## Storage
 

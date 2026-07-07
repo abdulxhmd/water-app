@@ -55,6 +55,33 @@ create table if not exists public.monthly_results (
   unique (month_start, month_end, user_a_id, user_b_id)
 );
 
+-- weekly_results/monthly_results predate this migration file in production,
+-- so the `unique (...)` clauses in their `create table if not exists` above
+-- were silently skipped for the already-existing tables (same issue as the
+-- cascade-delete gap on user_preferences below). Add them defensively.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.weekly_results'::regclass
+      and contype = 'u'
+  ) then
+    alter table public.weekly_results
+      add constraint weekly_results_week_start_week_end_user_a_id_user_b_id_key
+      unique (week_start, week_end, user_a_id, user_b_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.monthly_results'::regclass
+      and contype = 'u'
+  ) then
+    alter table public.monthly_results
+      add constraint monthly_results_month_start_month_end_user_a_id_user_b_id_key
+      unique (month_start, month_end, user_a_id, user_b_id);
+  end if;
+end $$;
+
 create table if not exists public.user_preferences (
   user_id uuid primary key references auth.users (id) on delete cascade,
   daily_reminder boolean not null default false,
@@ -99,6 +126,17 @@ create table if not exists public.wishes (
   created_at timestamptz not null default now(),
   unique (month_start, month_end, user_id)
 );
+
+-- Pending/completed tracking for wishes, added after the fact once real
+-- wishes started accumulating a backlog worth tracking.
+alter table public.wishes
+  add column if not exists fulfilled boolean not null default false;
+
+alter table public.wishes
+  add column if not exists fulfilled_at timestamptz;
+
+alter table public.wishes
+  add column if not exists fulfillment_note text;
 
 -- ============================================================================
 -- Row Level Security.
@@ -215,6 +253,14 @@ create policy "wishes_insert_winner_only" on public.wishes
         )
     )
   );
+
+-- Either half of the pair can update the fulfilled/fulfillment_note fields
+-- (the partner marks it done once they've delivered on the wish, though
+-- either person doing it is fine for a two-person app).
+drop policy if exists "wishes_update_pair" on public.wishes;
+create policy "wishes_update_pair" on public.wishes
+  for update using (auth.uid() = user_id or auth.uid() = partner_id)
+  with check (auth.uid() = user_id or auth.uid() = partner_id);
 
 -- ============================================================================
 -- Storage bucket for avatar images.

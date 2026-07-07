@@ -9,6 +9,7 @@ import { getUserNames } from "@/lib/users";
 import { useProfile } from "@/lib/useProfile";
 import { usePartner } from "@/lib/usePartner";
 import { clampWater, MAX_SINGLE_ENTRY_ML } from "@/lib/water";
+import { getRandomHydrationMessage } from "@/lib/hydrationMessages";
 import UserAvatar from "@/components/UserAvatar";
 import PageFooter from "@/components/PageFooter";
 
@@ -28,6 +29,7 @@ export default function TodayPage() {
   const greetingName = currentName === "You" ? "there" : currentName;
   const avatarUrl = useProfile(userId);
   const goal = 4000; // Daily target in milliliters.
+  const [hydrationMessage] = useState(() => getRandomHydrationMessage());
 
   // "Log yesterday" support: lets someone who forgot to save before midnight
   // correct the previous day's total from today's screen.
@@ -479,10 +481,10 @@ export default function TodayPage() {
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium text-slate-800 dark:text-slate-700 md:text-base">
-                &quot;A sip for you is a win for both of us.&quot;
+                &quot;{hydrationMessage.quote}&quot;
               </p>
               <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
-                Keep flowing, you&apos;re doing great!
+                {hydrationMessage.sub}
               </p>
             </div>
           </div>

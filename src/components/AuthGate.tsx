@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import NavBar from "@/components/NavBar";
 import { useUser } from "@/lib/useUser";
 
-const PROTECTED_ROUTES = new Set(["/today", "/week", "/month", "/settings"]);
+const PROTECTED_ROUTES = new Set(["/today", "/week", "/month", "/settings", "/history"]);
 const AUTH_ROUTES = new Set(["/", "/login", "/setup-passcode"]);
 
 type AuthGateProps = {
