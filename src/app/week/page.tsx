@@ -39,6 +39,7 @@ function getDaysAtGoalLabel(days: { water: number }[]) {
 }
 
 export default function WeekPage() {
+  const [weekOffset, setWeekOffset] = useState(0);
   const [weekEntries, setWeekEntries] = useState<DailyWaterEntry[]>([]);
   const [partnerWeekEntries, setPartnerWeekEntries] = useState<DailyWaterEntry[]>([]);
   const [isLoadingWeek, setIsLoadingWeek] = useState(true);
@@ -57,8 +58,23 @@ export default function WeekPage() {
   const avatarUrl = useProfile(userId);
   const partnerAvatarUrl = useProfile(partnerId);
 
-  const { startDate, endDate } = getWeekRange(new Date());
+  const { startDate, endDate } = useMemo(() => {
+    const anchor = new Date();
+    anchor.setDate(anchor.getDate() + weekOffset * 7);
+    return getWeekRange(anchor);
+  }, [weekOffset]);
   const isWeekLocked = new Date() > endOfLocalDay(endDate);
+  const isCurrentWeek = weekOffset === 0;
+
+  const goToWeek = (offset: number) => {
+    setWeekOffset(offset);
+    setIsLoadingWeek(true);
+    setWeekEntries([]);
+    setPartnerWeekEntries([]);
+    setWeeklyTotals(null);
+    setWeeklyWinnerState("");
+    setResultSaveError(null);
+  };
 
   const currentWeekTotal = weekEntries.reduce((sum, entry) => sum + entry.water_ml, 0);
   const partnerWeekTotal = partnerWeekEntries.reduce((sum, entry) => sum + entry.water_ml, 0);
@@ -128,9 +144,15 @@ export default function WeekPage() {
     effectiveWeeklyTotals.userB > effectiveWeeklyTotals.userA;
   const currentDaysAtGoalLabel = getDaysAtGoalLabel(weekDays);
   const partnerDaysAtGoalLabel = getDaysAtGoalLabel(partnerWeekDays);
+  // True while a locked week's stored result is still being fetched or saved.
+  const isResultPending =
+    isLoadingWeek ||
+    (Boolean(partnerId) &&
+      !resultSaveError &&
+      (computedWeeklyTotals.userA > 0 || computedWeeklyTotals.userB > 0));
 
   useEffect(() => {
-    if (!isWeekLocked || loading || !userId || !partnerId) {
+    if (!isWeekLocked || loading || !userId || !partnerId || isLoadingWeek) {
       return;
     }
 
@@ -167,6 +189,10 @@ export default function WeekPage() {
         return;
       }
 
+      if (totalsToSave.userA === 0 && totalsToSave.userB === 0) {
+        return;
+      }
+
       const computedWinner = getWeeklyWinner(totalsToSave, USER_A, USER_B);
       if (!computedWinner) {
         return;
@@ -190,6 +216,7 @@ export default function WeekPage() {
         return;
       }
 
+      setWeeklyTotals(totalsToSave);
       setWeeklyWinnerState(computedWinner);
     };
 
@@ -199,6 +226,7 @@ export default function WeekPage() {
     USER_B,
     computedWeeklyTotals,
     endDate,
+    isLoadingWeek,
     isWeekLocked,
     loading,
     partnerId,
@@ -252,9 +280,9 @@ export default function WeekPage() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                disabled
-                title="Browsing previous weeks isn't available yet"
-                className="flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border border-[#E3E8F5] bg-white text-slate-500 opacity-60 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-600"
+                onClick={() => goToWeek(weekOffset - 1)}
+                title="Previous week"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#E3E8F5] bg-white text-slate-500 shadow-sm transition-colors hover:border-brand/30 hover:text-brand dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-600"
               >
                 <span className="material-symbols-outlined">chevron_left</span>
               </button>
@@ -262,9 +290,18 @@ export default function WeekPage() {
                 {weekDateLabel}
               </span>
               <button
-                disabled
-                title="Browsing future weeks isn't available yet"
-                className="flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border border-[#E3E8F5] bg-white text-slate-500 opacity-60 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-600"
+                onClick={() => goToWeek(weekOffset + 1)}
+                disabled={isCurrentWeek}
+                title={
+                  isCurrentWeek
+                    ? "You're already on the current week"
+                    : "Next week"
+                }
+                className={`flex h-10 w-10 items-center justify-center rounded-full border border-[#E3E8F5] bg-white text-slate-500 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff] dark:text-slate-600 ${
+                  isCurrentWeek
+                    ? "cursor-not-allowed opacity-60"
+                    : "transition-colors hover:border-brand/30 hover:text-brand"
+                }`}
               >
                 <span className="material-symbols-outlined">chevron_right</span>
               </button>
@@ -311,7 +348,7 @@ export default function WeekPage() {
 
           <div className="rounded-xl border border-[#E3E8F5] bg-white p-6 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff]">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-600">
-              This Week
+              {isCurrentWeek ? "This Week" : `Week of ${weekDateLabel}`}
             </h3>
             {isLoadingWeek ? (
               <p className="mt-4 text-sm text-slate-500">Loading this week&apos;s data…</p>
@@ -364,7 +401,18 @@ export default function WeekPage() {
                   {weeklyResult}
                 </div>
               </div>
-            ) : null
+            ) : (
+              <div className="rounded-xl border border-[#E3E8F5] bg-white/80 p-6 text-sm text-slate-500 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff]">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-600">
+                  Weekly Result
+                </h3>
+                <div className="mt-4 rounded-lg border border-[#E3E8F5] bg-white/80 px-3 py-2 text-center text-xs font-medium text-slate-500">
+                  {isResultPending
+                    ? "Loading result…"
+                    : "No result was recorded for this week."}
+                </div>
+              </div>
+            )
           ) : (
             <div className="rounded-xl border border-[#E3E8F5] bg-white/80 p-6 text-sm text-slate-500 shadow-sm dark:border-[#dbe6f2] dark:bg-[#eef7ff]">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-600">
